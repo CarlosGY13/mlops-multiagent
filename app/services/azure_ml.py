@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.config import get_settings
 from app.services.storage import BASE_DATA
+
+_ML_CLIENT_LOCK = threading.Lock()
+_ML_CLIENT_CACHE: Dict[Tuple[Optional[str], str, str, str], Any] = {}
 
 
 class AzureMLNotConfigured(RuntimeError):
@@ -104,18 +108,25 @@ def get_ml_client():
     s = get_settings()
     sub, rg, ws = _require_workspace_settings()
 
-    # If a tenant is provided, hard-pin authentication to that tenant.
-    # Prefer Azure CLI when available, but fall back to interactive browser login
-    # (common on machines without `az` installed).
-    if s.azure_tenant_id:
-        cred = imp.ChainedTokenCredential(
-            imp.AzureCliCredential(tenant_id=s.azure_tenant_id),
-            imp.InteractiveBrowserCredential(tenant_id=s.azure_tenant_id),
-        )
-    else:
-        cred = imp.DefaultAzureCredential(exclude_interactive_browser_credential=False)
+    cache_key = (s.azure_tenant_id, sub, rg, ws)
+    with _ML_CLIENT_LOCK:
+        cached = _ML_CLIENT_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
 
-    return imp.MLClient(credential=cred, subscription_id=sub, resource_group_name=rg, workspace_name=ws)
+        # If a tenant is provided, hard-pin authentication to that tenant.
+        # Prefer Azure CLI when available, but fall back to interactive browser login.
+        if s.azure_tenant_id:
+            cred = imp.ChainedTokenCredential(
+                imp.AzureCliCredential(tenant_id=s.azure_tenant_id),
+                imp.InteractiveBrowserCredential(tenant_id=s.azure_tenant_id, timeout=600),
+            )
+        else:
+            cred = imp.DefaultAzureCredential(exclude_interactive_browser_credential=False)
+
+        client = imp.MLClient(credential=cred, subscription_id=sub, resource_group_name=rg, workspace_name=ws)
+        _ML_CLIENT_CACHE[cache_key] = client
+        return client
 
 
 def ensure_compute(ml_client, *, name: str) -> None:
@@ -179,16 +190,16 @@ def submit_training_job(
         conda_file=str(code_dir / "conda.yml"),
     )
 
-    drop_json = json.dumps(drop_columns or [])
-    models_json = json.dumps(model_candidates or [])
+    drop_json = json.dumps(drop_columns or [], separators=(",", ":"))
+    models_json = json.dumps(model_candidates or [], separators=(",", ":"))
 
     cmd = [
         "python train_multi.py",
-        "--data ${{inputs.data}}",
-        "--target ${{inputs.target}}",
-        "--drop_cols_json ${{inputs.drop_cols_json}}",
-        "--models_json ${{inputs.models_json}}",
-        "--out_dir ${{outputs.out_dir}}",
+        "--data '${{inputs.data}}'",
+        "--target '${{inputs.target}}'",
+        "--drop_cols_json '${{inputs.drop_cols_json}}'",
+        "--models_json '${{inputs.models_json}}'",
+        "--out_dir '${{outputs.out_dir}}'",
     ]
 
     inputs: Dict[str, Any] = {
@@ -198,7 +209,7 @@ def submit_training_job(
         "models_json": models_json,
     }
     if task and task.strip():
-        cmd.insert(3, "--task ${{inputs.task}}")
+        cmd.insert(3, "--task '${{inputs.task}}'")
         inputs["task"] = task.strip()
 
     job = command(
@@ -255,7 +266,22 @@ def get_job_status(job_id: str) -> Dict[str, Any]:
         except Exception as e:
             results = {"error": str(e)}
 
-    return {"job_id": job_id, "status": status, "details": job.as_dict(), "results": results}
+    # `job.as_dict` can be a method or a property depending on azure-ai-ml version.
+    # Keep this endpoint resilient so the UI can always poll status.
+    details: Dict[str, Any]
+    try:
+        as_dict = getattr(job, "as_dict", None)
+        if callable(as_dict):
+            details = as_dict()
+        elif isinstance(as_dict, dict):
+            details = as_dict
+        else:
+            to_dict = getattr(job, "_to_dict", None)
+            details = to_dict() if callable(to_dict) else {"repr": repr(job)}
+    except Exception:
+        details = {"repr": repr(job)}
+
+    return {"job_id": job_id, "status": status, "details": details, "results": results}
 
 
 def _download_and_parse_results(ml_client, job_id: str) -> Dict[str, Any]:
