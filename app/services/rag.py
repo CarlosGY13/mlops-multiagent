@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import re
-import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 
 import httpx
-
-from app.services.storage import BASE_DATA, load_json, save_json
 
 
 @dataclass
@@ -38,26 +34,7 @@ def _mock_results(query: str, top_k: int) -> RagResult:
     return RagResult(papers=papers, datasets=datasets)
 
 
-def _cache_path(query: str, top_k: int) -> Any:
-    key = hashlib.sha256(f"rag_v2|{top_k}|{query.strip().lower()}".encode("utf-8")).hexdigest()[:24]
-    return BASE_DATA / "rag_cache" / f"{key}.json"
-
-
-def _load_cache(path, ttl_seconds: int) -> Optional[Dict[str, Any]]:
-    if not path.exists():
-        return None
-    try:
-        payload = load_json(path)
-        fetched_at = float(payload.get("fetched_at", 0))
-        if time.time() - fetched_at > ttl_seconds:
-            return None
-        return payload
-    except Exception:
-        return None
-
-
-def _save_cache(path, papers: List[Dict[str, str]], datasets: List[Dict[str, str]]) -> None:
-    save_json(path, {"fetched_at": time.time(), "papers": papers, "datasets": datasets})
+# Note: no local cache by design (per product decision). Keep calls live and lightweight.
 
 
 def _europe_pmc_url(source: str, pmc_id: str) -> str:
@@ -103,7 +80,8 @@ def _tokens(query: str) -> List[str]:
 
 def _openml_list_data_name(name: str, top_k: int, client: httpx.Client) -> List[Dict[str, str]]:
     # OpenML uses path-based params; query params are ignored.
-    url = f"https://www.openml.org/api/v1/json/data/list/data_name/{httpx.URL(name).raw_path.decode('utf-8')}/limit/{top_k}"
+    safe = httpx.URL(name).raw_path.decode('utf-8')
+    url = f"https://www.openml.org/api/v1/json/data/list/data_name/{safe}/limit/{top_k}"
     r = client.get(url)
     if r.status_code == 412:
         return []
@@ -120,7 +98,8 @@ def _openml_list_data_name(name: str, top_k: int, client: httpx.Client) -> List[
 
 
 def _openml_list_tag(tag: str, top_k: int, client: httpx.Client) -> List[Dict[str, str]]:
-    url = f"https://www.openml.org/api/v1/json/data/list/tag/{httpx.URL(tag).raw_path.decode('utf-8')}/limit/{top_k}"
+    safe = httpx.URL(tag).raw_path.decode('utf-8')
+    url = f"https://www.openml.org/api/v1/json/data/list/tag/{safe}/limit/{top_k}"
     r = client.get(url)
     if r.status_code == 412:
         return []
@@ -183,11 +162,6 @@ def search_scientific_context(query: str, top_k: int = 5, use_local_mock: bool =
     if use_local_mock:
         return _mock_results(query, top_k)
 
-    cache_file = _cache_path(query, top_k)
-    cached = _load_cache(cache_file, ttl_seconds=24 * 3600)
-    if cached:
-        return RagResult(papers=cached.get("papers", [])[:top_k], datasets=cached.get("datasets", [])[:top_k])
-
     try:
         with httpx.Client(timeout=20, headers={"User-Agent": "LabNotebookAI/1.1"}) as client:
             papers = _search_europe_pmc(query, top_k, client)
@@ -202,5 +176,4 @@ def search_scientific_context(query: str, top_k: int = 5, use_local_mock: bool =
     if len(datasets) < top_k:
         datasets = datasets + _mock_results(query, top_k).datasets[len(datasets) : top_k]
 
-    _save_cache(cache_file, papers=papers[:top_k], datasets=datasets[:top_k])
     return RagResult(papers=papers[:top_k], datasets=datasets[:top_k])

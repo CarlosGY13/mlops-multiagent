@@ -1,0 +1,27 @@
+{
+  "fetched_at": 1774659656.9479291,
+  "papers": [
+    {
+      "title": "Multi-omics investigation of microbial community dynamics and metabolic regulation in mulberry wine fermentation under temperature and acid stress (Food Microbiology., 2026)",
+      "source": "Europe PMC",
+      "url": "https://europepmc.org/article/AGR/IND609391770"
+    },
+    {
+      "title": "Recent advances on fermentation of mustard plant (Brassica juncea L.): microbial community, fermentation processing and sensorial quality: a review",
+      "source": "Europe PMC",
+      "url": "https://europepmc.org/article/PMC/PMC13008857"
+    }
+  ],
+  "datasets": [
+    {
+      "title": "Similar dataset 1 for fermentation temperature pH",
+      "source": "OpenML",
+      "url": "https://example.org/datasets/1"
+    },
+    {
+      "title": "Similar dataset 2 for fermentation temperature pH",
+      "source": "OpenML",
+      "url": "https://example.org/datasets/2"
+    }
+  ]
+}

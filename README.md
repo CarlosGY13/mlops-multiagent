@@ -24,4 +24,4 @@ Open `http://127.0.0.1:8000/` to view the staged flow and switch Researcher/Tech
 `USE_LOCAL_MOCK=true` por defecto para desarrollo sin Azure real.
 
 ### Live RAG (Europe PMC + OpenML)
-Set `USE_LOCAL_MOCK=false` to use real HTTP calls for the related research side panel. Results are cached locally under `data/rag_cache/`.
+Set `USE_LOCAL_MOCK=false` to use real HTTP calls for the related research side panel.

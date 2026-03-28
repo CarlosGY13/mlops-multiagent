@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 BASE_DATA = Path("data")
 BASE_DATA.mkdir(exist_ok=True)
-for zone in ("raw", "curated", "quarantine", "ground_truth", "mlflow_mock", "rag_cache"):
+for zone in ("raw", "curated", "quarantine", "ground_truth", "mlflow_mock"):
     (BASE_DATA / zone).mkdir(parents=True, exist_ok=True)
 
 
