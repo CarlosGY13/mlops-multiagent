@@ -31,7 +31,23 @@ def _raise_friendly_tenant_error(e: Exception, *, tenant_id: str, subscription_i
         ) from e
 
 
-def _lazy_imports():
+@dataclass(frozen=True)
+class _AzureMLImports:
+    AzureCliCredential: Any
+    ChainedTokenCredential: Any
+    DefaultAzureCredential: Any
+    InteractiveBrowserCredential: Any
+    MLClient: Any
+    Environment: Any
+    AmlCompute: Any
+    ResourceNotFoundError: Any
+    HttpResponseError: Any
+    command: Any
+    Input: Any
+    Output: Any
+
+
+def _lazy_imports() -> _AzureMLImports:
     try:
         from azure.identity import (  # type: ignore
             AzureCliCredential,
@@ -41,8 +57,8 @@ def _lazy_imports():
         )
         from azure.ai.ml import MLClient  # type: ignore
         from azure.ai.ml.entities import Environment, AmlCompute  # type: ignore
-        from azure.ai.ml import command, Input  # type: ignore
-        from azure.core.exceptions import ResourceNotFoundError  # type: ignore
+        from azure.ai.ml import command, Input, Output  # type: ignore
+        from azure.core.exceptions import ResourceNotFoundError, HttpResponseError  # type: ignore
     except Exception as e:  # pragma: no cover
         raise RuntimeError(
             "Azure ML SDK import failed. Ensure you're running the server from the same venv where dependencies were installed. "
@@ -50,17 +66,19 @@ def _lazy_imports():
             f"Original error: {type(e).__name__}: {e}"
         ) from e
 
-    return (
-        AzureCliCredential,
-        ChainedTokenCredential,
-        DefaultAzureCredential,
-        InteractiveBrowserCredential,
-        MLClient,
-        Environment,
-        AmlCompute,
-        ResourceNotFoundError,
-        command,
-        Input,
+    return _AzureMLImports(
+        AzureCliCredential=AzureCliCredential,
+        ChainedTokenCredential=ChainedTokenCredential,
+        DefaultAzureCredential=DefaultAzureCredential,
+        InteractiveBrowserCredential=InteractiveBrowserCredential,
+        MLClient=MLClient,
+        Environment=Environment,
+        AmlCompute=AmlCompute,
+        ResourceNotFoundError=ResourceNotFoundError,
+        HttpResponseError=HttpResponseError,
+        command=command,
+        Input=Input,
+        Output=Output,
     )
 
 
@@ -81,14 +99,7 @@ def _require_workspace_settings() -> Tuple[str, str, str]:
 
 
 def get_ml_client():
-    (
-        AzureCliCredential,
-        ChainedTokenCredential,
-        DefaultAzureCredential,
-        InteractiveBrowserCredential,
-        MLClient,
-        *_
-    ) = _lazy_imports()
+    imp = _lazy_imports()
 
     s = get_settings()
     sub, rg, ws = _require_workspace_settings()
@@ -97,31 +108,22 @@ def get_ml_client():
     # Prefer Azure CLI when available, but fall back to interactive browser login
     # (common on machines without `az` installed).
     if s.azure_tenant_id:
-        cred = ChainedTokenCredential(
-            AzureCliCredential(tenant_id=s.azure_tenant_id, subscription=sub),
-            InteractiveBrowserCredential(tenant_id=s.azure_tenant_id),
+        cred = imp.ChainedTokenCredential(
+            imp.AzureCliCredential(tenant_id=s.azure_tenant_id),
+            imp.InteractiveBrowserCredential(tenant_id=s.azure_tenant_id),
         )
     else:
-        cred = DefaultAzureCredential(exclude_interactive_browser_credential=False)
+        cred = imp.DefaultAzureCredential(exclude_interactive_browser_credential=False)
 
-    return MLClient(credential=cred, subscription_id=sub, resource_group_name=rg, workspace_name=ws)
+    return imp.MLClient(credential=cred, subscription_id=sub, resource_group_name=rg, workspace_name=ws)
 
 
 def ensure_compute(ml_client, *, name: str) -> None:
     """Ensure the configured AML compute exists; create it if missing."""
     s = get_settings()
-    (
-        _AzureCliCredential,
-        _ChainedTokenCredential,
-        _DefaultAzureCredential,
-        _InteractiveBrowserCredential,
-        _MLClient,
-        _Environment,
-        AmlCompute,
-        ResourceNotFoundError,
-        _command,
-        _Input,
-    ) = _lazy_imports()
+    imp = _lazy_imports()
+    AmlCompute = imp.AmlCompute
+    ResourceNotFoundError = imp.ResourceNotFoundError
 
     try:
         ml_client.compute.get(name)
@@ -151,18 +153,11 @@ def submit_training_job(
     if s.use_local_mock:
         return {"job_id": f"mock-{dataset_id}", "status": "mock", "studio_url": None}
 
-    (
-        _AzureCliCredential,
-        _ChainedTokenCredential,
-        _DefaultAzureCredential,
-        _InteractiveBrowserCredential,
-        _MLClient,
-        Environment,
-        _AmlCompute,
-        _ResourceNotFoundError,
-        command,
-        Input,
-    ) = _lazy_imports()
+    imp = _lazy_imports()
+    Environment = imp.Environment
+    command = imp.command
+    Input = imp.Input
+    Output = imp.Output
     ml_client = get_ml_client()
 
     # Auto-create compute if missing (saves manual setup for demos)
@@ -187,27 +182,32 @@ def submit_training_job(
     drop_json = json.dumps(drop_columns or [])
     models_json = json.dumps(model_candidates or [])
 
+    cmd = [
+        "python train_multi.py",
+        "--data ${{inputs.data}}",
+        "--target ${{inputs.target}}",
+        "--drop_cols_json ${{inputs.drop_cols_json}}",
+        "--models_json ${{inputs.models_json}}",
+        "--out_dir ${{outputs.out_dir}}",
+    ]
+
+    inputs: Dict[str, Any] = {
+        "data": Input(type="uri_file", path=str(data_path)),
+        "target": target_column,
+        "drop_cols_json": drop_json,
+        "models_json": models_json,
+    }
+    if task and task.strip():
+        cmd.insert(3, "--task ${{inputs.task}}")
+        inputs["task"] = task.strip()
+
     job = command(
         code=str(code_dir),
-        command=(
-            "python train_multi.py "
-            "--data ${{inputs.data}} "
-            "--target ${{inputs.target}} "
-            "--task ${{inputs.task}} "
-            "--drop_cols_json ${{inputs.drop_cols_json}} "
-            "--models_json ${{inputs.models_json}} "
-            "--out_dir ${{outputs.out_dir}}"
-        ),
-        inputs={
-            "data": Input(type="uri_file", path=str(data_path)),
-            "target": target_column,
-            "task": task or "",
-            "drop_cols_json": drop_json,
-            "models_json": models_json,
-        },
-        outputs={"out_dir": {"type": "uri_folder"}},
+        command=" ".join(cmd),
+        inputs=inputs,
+        outputs={"out_dir": Output(type="uri_folder", mode="rw_mount")},
         environment=env,
-        compute=s.azure_ml_compute_name,
+        compute=f"azureml:{s.azure_ml_compute_name}",
         display_name=f"labnotebookai-train-{dataset_id}",
         description="Feature engineering (drop columns) + multi-model training.",
     )
@@ -217,6 +217,18 @@ def submit_training_job(
     except Exception as e:
         if s.azure_tenant_id:
             _raise_friendly_tenant_error(e, tenant_id=s.azure_tenant_id, subscription_id=_require_workspace_settings()[0])
+        # Improve AzureML REST diagnostics
+        imp = _lazy_imports()
+        if isinstance(e, imp.HttpResponseError) and getattr(e, "response", None) is not None:
+            resp = e.response
+            try:
+                body = resp.text()
+            except Exception:
+                body = None
+            raise RuntimeError(
+                f"Azure ML request failed (HTTP {getattr(resp,'status_code', '?')}). "
+                f"{str(e)}" + (f"\nResponse body:\n{body}" if body else "")
+            ) from e
         raise
     studio_url = getattr(created, "studio_url", None)
     return {"job_id": created.name, "status": str(created.status), "studio_url": studio_url}
@@ -270,18 +282,8 @@ def deploy_from_job(*, job_id: str, model_id: str, endpoint_name: Optional[str])
             "scoring_uri": None,
         }
 
-    (
-        _AzureCliCredential,
-        _ChainedTokenCredential,
-        _DefaultAzureCredential,
-        _InteractiveBrowserCredential,
-        _MLClient,
-        Environment,
-        _AmlCompute,
-        _ResourceNotFoundError,
-        _command,
-        _Input,
-    ) = _lazy_imports()
+    imp = _lazy_imports()
+    Environment = imp.Environment
     from azure.ai.ml.entities import ManagedOnlineEndpoint, ManagedOnlineDeployment, Model  # type: ignore
 
     ml_client = get_ml_client()
