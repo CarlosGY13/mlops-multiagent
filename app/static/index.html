@@ -115,6 +115,38 @@
               <div id="exp-status-val" class="status-val"></div>
             </div>
 
+            <div class="dual-card" data-dual="aml_exp">
+              <div class="dc-tabs">
+                <div class="dc-tab a">Azure ML pipeline</div>
+                <div class="dc-tab">(feature engineering → train → evaluate → deploy)</div>
+              </div>
+              <div class="dc-body">
+                <div class="chat-input-row" style="align-items:center;flex-wrap:wrap">
+                  <input id="exp-target" placeholder="target column (required)" style="flex:1;min-width:220px" />
+                  <input id="exp-drop" placeholder="drop columns (comma-separated, optional)" style="flex:2;min-width:260px" />
+                  <button class="send-btn" id="btn-aml-train">Run training</button>
+                </div>
+                <div class="mini" style="margin-top:6px">Runs in Azure ML compute (<span id="aml-compute">cpu-cluster</span>). Use drop columns to remove IDs/leaky fields before training.</div>
+
+                <div id="aml-status" class="status-row hidden" style="margin-top:10px">
+                  <div id="aml-status-dot" class="status-dot sd-run"></div>
+                  <div id="aml-status-label" class="status-label">Azure ML job</div>
+                  <div id="aml-status-val" class="status-val"></div>
+                </div>
+
+                <div id="aml-metrics" style="margin-top:10px"></div>
+
+                <div class="chat-input-row" style="margin-top:10px;align-items:center;flex-wrap:wrap">
+                  <select id="aml-model-select" style="flex:1;min-width:220px;padding:9px 10px;font-size:12px;border:0.5px solid var(--color-border-secondary);border-radius:12px;background:var(--color-background-secondary);color:var(--color-text-primary);outline:none;font-family:inherit">
+                    <option value="">Select model to deploy (after evaluation)</option>
+                  </select>
+                  <input id="aml-endpoint" placeholder="endpoint name (optional)" style="flex:1;min-width:220px" />
+                  <button class="lit-btn" id="btn-aml-deploy">Deploy</button>
+                </div>
+                <div id="aml-deploy" class="mini" style="margin-top:8px"></div>
+              </div>
+            </div>
+
             <div class="note" style="margin-top:10px">
               <div class="note-title">Responsible AI</div>
               <div class="note-body">

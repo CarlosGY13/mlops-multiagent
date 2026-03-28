@@ -15,6 +15,7 @@ def health():
         "app": settings.app_name,
         "env": settings.env,
         "use_local_mock": settings.use_local_mock,
+        "azure_ml_compute_name": settings.azure_ml_compute_name,
         "zones": {
             "development": "fases 1-6",
             "production": "fases 7-10",

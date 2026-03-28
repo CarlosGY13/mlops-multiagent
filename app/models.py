@@ -23,6 +23,40 @@ class TrainRequest(BaseModel):
     task: Optional[str] = Field(default=None, description="classification|regression")
 
 
+class AzureMLTrainRequest(BaseModel):
+    dataset_id: str
+    target_column: str
+    drop_columns: list[str] = []
+    task: Optional[str] = Field(default=None, description="classification|regression")
+    model_candidates: list[str] = ["logreg", "rf", "gbrt"]
+
+
+class AzureMLTrainResponse(BaseModel):
+    job_id: str
+    status: str
+    studio_url: Optional[str] = None
+
+
+class AzureMLJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    details: dict
+    results: Optional[dict] = None
+
+
+class AzureMLDeployRequest(BaseModel):
+    job_id: str
+    model_id: str
+    endpoint_name: Optional[str] = None
+
+
+class AzureMLDeployResponse(BaseModel):
+    endpoint_name: str
+    deployment_name: str
+    status: str
+    scoring_uri: Optional[str] = None
+
+
 class TrainResponse(BaseModel):
     run_id: str
     dataset_hash: str

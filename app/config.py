@@ -11,6 +11,20 @@ class Settings(BaseSettings):
     env: str = "development"
     use_local_mock: bool = True
 
+    # Azure (shared)
+    azure_subscription_id: Optional[str] = None
+    azure_resource_group: Optional[str] = None
+    azure_region: Optional[str] = None
+
+    # Azure ML workspace
+    azure_ml_workspace_name: Optional[str] = None
+    azure_ml_compute_name: str = "cpu-cluster"
+
+    # Azure ML compute defaults (used when auto-creating compute)
+    azure_ml_compute_vm_size: str = "Standard_DS3_v2"
+    azure_ml_compute_min_nodes: int = 0
+    azure_ml_compute_max_nodes: int = 2
+
     azure_key_vault_url: Optional[str] = None
     azure_ai_search_endpoint: Optional[str] = None
     azure_ai_search_index: Optional[str] = None

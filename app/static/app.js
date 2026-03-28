@@ -115,21 +115,49 @@ function updateStepFlow(){
     el.textContent = String(idx+1);
   });
 
-  if (state.ingest){
-    els[0].classList.remove('sc-todo'); els[0].classList.add('sc-done'); els[0].textContent = '✓';
-    els[1].classList.remove('sc-todo'); els[1].classList.add('sc-active');
-  } else {
+  // Default progression: upload → quality → features → train → evaluate → deploy
+  if (!state.ingest){
     els[0].classList.remove('sc-todo'); els[0].classList.add('sc-active');
+    return;
   }
 
-  if (state.train){
-    els[1].classList.remove('sc-active'); els[1].classList.add('sc-done'); els[1].textContent = '✓';
+  // Upload done
+  els[0].classList.remove('sc-todo'); els[0].classList.add('sc-done'); els[0].textContent = '✓';
+  // Quality done (ingest includes quality/quarantine)
+  els[1].classList.remove('sc-todo'); els[1].classList.add('sc-done'); els[1].textContent = '✓';
+
+  // Azure ML path (preferred when running cloud jobs)
+  const aml = state.aml;
+  if (aml?.deploy?.status === 'deployed' || aml?.deploy?.status === 'mock'){
+    els[2].classList.remove('sc-todo'); els[2].classList.add('sc-done'); els[2].textContent = '✓';
     els[3].classList.remove('sc-todo'); els[3].classList.add('sc-done'); els[3].textContent = '✓';
-    els[4].classList.remove('sc-todo'); els[4].classList.add('sc-active');
+    els[4].classList.remove('sc-todo'); els[4].classList.add('sc-done'); els[4].textContent = '✓';
+    els[5].classList.remove('sc-todo'); els[5].classList.add('sc-done'); els[5].textContent = '✓';
+    return;
   }
 
-  if (state.drift){
+  if (aml?.results){
+    // Features + Train + Evaluate done; next is Deploy
+    els[2].classList.remove('sc-todo'); els[2].classList.add('sc-done'); els[2].textContent = '✓';
+    els[3].classList.remove('sc-todo'); els[3].classList.add('sc-done'); els[3].textContent = '✓';
+    els[4].classList.remove('sc-todo'); els[4].classList.add('sc-done'); els[4].textContent = '✓';
     els[5].classList.remove('sc-todo'); els[5].classList.add('sc-active');
+    return;
+  }
+
+  if (aml?.job_id){
+    els[2].classList.remove('sc-todo'); els[2].classList.add('sc-done'); els[2].textContent = '✓';
+    els[3].classList.remove('sc-todo'); els[3].classList.add('sc-active');
+    return;
+  }
+
+  // If no Azure ML job yet, we're at Features
+  els[2].classList.remove('sc-todo'); els[2].classList.add('sc-active');
+
+  // Back-compat: local training sets state.train
+  if (state.train){
+    els[3].classList.remove('sc-active'); els[3].classList.add('sc-done'); els[3].textContent = '✓';
+    els[4].classList.remove('sc-todo'); els[4].classList.add('sc-active');
   }
 }
 
@@ -498,6 +526,8 @@ function variablesNarrative(){
 function rerender(){
   updateStepFlow();
   updateBadges();
+
+  if ($('aml-compute')) $('aml-compute').textContent = (state.amlCompute || 'cpu-cluster');
   renderMetrics();
   resultsMetrics();
 
@@ -572,6 +602,11 @@ function rerender(){
   }
 
   try { renderSearch(); } catch (_) {}
+
+  // Azure ML experiment controls
+  if (state.aml?.results){
+    try { _renderAmlMetrics(state.aml.results); } catch (_) {}
+  }
 
   if (state.drift?.technical){
     const detected = !!state.drift.technical.drift_detected;
@@ -1192,7 +1227,150 @@ async function runSearch(){
   renderSearch();
 }
 
+function _setAmlStatus(kind, label, val){
+  const row = $('aml-status');
+  if (!row) return;
+  row.classList.remove('hidden');
+  const dot = $('aml-status-dot');
+  dot.classList.remove('sd-ok','sd-warn','sd-run');
+  dot.classList.add(kind);
+  $('aml-status-label').textContent = label;
+  $('aml-status-val').textContent = val || '';
+}
+
+function _renderAmlMetrics(results){
+  const el = $('aml-metrics');
+  if (!el) return;
+  if (!results){
+    el.innerHTML = '';
+    return;
+  }
+
+  const task = results.task || '';
+  const best = results.best_model_id || '';
+  const dropped = (results.dropped_columns || []).join(', ');
+  const models = results.models || {};
+  const rows = Object.entries(models).map(([k,v]) => {
+    const m = v.metrics || {};
+    const cols = task === 'classification'
+      ? [`AUC: ${Number(m.auc ?? 0).toFixed(3)}`, `Recall: ${Number(m.recall ?? 0).toFixed(3)}`, `Acc: ${Number(m.accuracy ?? 0).toFixed(3)}`]
+      : [`R²: ${Number(m.r2 ?? 0).toFixed(3)}`, `RMSE: ${Number(m.rmse ?? 0).toFixed(3)}`];
+    const badge = (k === best) ? '<span class="sp-badge idx">best</span>' : '';
+    return `<div class="sp-card"><div class="sp-card-title">${escapeHtml(k)} ${badge}</div><div class="sp-card-sub">${escapeHtml(cols.join(' · '))}</div></div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="note">
+      <div class="note-title">Evaluation summary</div>
+      <div class="note-body">
+        <div><strong>Task:</strong> ${escapeHtml(task)} · <strong>Best:</strong> ${escapeHtml(best || '—')}</div>
+        <div class="mini" style="margin-top:6px"><strong>Dropped:</strong> ${escapeHtml(dropped || 'none')}</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px">${rows}</div>
+  `;
+
+  const sel = $('aml-model-select');
+  if (sel){
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Select model to deploy (after evaluation)</option>';
+    Object.keys(models).forEach((k) => {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = k + (k === best ? ' (best)' : '');
+      sel.appendChild(opt);
+    });
+    if (cur && Object.keys(models).includes(cur)) sel.value = cur;
+    else if (best) sel.value = best;
+  }
+}
+
+async function amlTrainNow(){
+  const target = ($('exp-target')?.value || '').trim();
+  const dropRaw = ($('exp-drop')?.value || '').trim();
+  const drop = dropRaw ? dropRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  if (!state.datasetId){
+    alert('Upload a dataset first.');
+    return;
+  }
+  if (!target){
+    alert('Target column is required.');
+    return;
+  }
+
+  state.aml = { job_id: null, status: 'starting', results: null, deploy: null };
+  rerender();
+  _setAmlStatus('sd-run','Azure ML job','submitting…');
+
+  try {
+    const body = await api('/api/part2/aml/train', {
+      method:'POST',
+      json: { dataset_id: state.datasetId, target_column: target, drop_columns: drop }
+    });
+    state.aml.job_id = body.job_id;
+    state.aml.status = body.status;
+    state.aml.studio_url = body.studio_url;
+    rerender();
+
+    _setAmlStatus('sd-run','Azure ML job', `${body.job_id} · ${body.status}`);
+    await pollAmlJob(body.job_id);
+  } catch (e){
+    state.aml = null;
+    rerender();
+    _setAmlStatus('sd-warn','Azure ML job', e.message);
+  }
+}
+
+async function pollAmlJob(jobId){
+  // Poll until completion or error; keep it lightweight.
+  for (let i=0; i<120; i++){
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      const st = await api(`/api/part2/aml/jobs/${encodeURIComponent(jobId)}`);
+      state.aml.status = st.status;
+      if (st.results){
+        state.aml.results = st.results;
+        _setAmlStatus('sd-ok','Azure ML job', `${jobId} · ${st.status}`);
+        _renderAmlMetrics(st.results);
+        rerender();
+        return;
+      }
+      _setAmlStatus('sd-run','Azure ML job', `${jobId} · ${st.status}`);
+      rerender();
+
+      const s = String(st.status || '').toLowerCase();
+      if (['failed','canceled','cancelled','error'].some(x => s.includes(x))){
+        _setAmlStatus('sd-warn','Azure ML job', `${jobId} · ${st.status}`);
+        return;
+      }
+    } catch (_) {
+      // keep polling
+    }
+  }
+}
+
+async function amlDeployNow(){
+  const jobId = state.aml?.job_id;
+  const modelId = ($('aml-model-select')?.value || '').trim();
+  const endpointName = ($('aml-endpoint')?.value || '').trim();
+
+  if (!jobId) return alert('Run training first.');
+  if (!modelId) return alert('Select a model to deploy.');
+
+  $('aml-deploy').textContent = 'Deploying…';
+  try {
+    const body = await api('/api/part2/aml/deploy', { method:'POST', json: { job_id: jobId, model_id: modelId, endpoint_name: endpointName || null } });
+    state.aml.deploy = body;
+    $('aml-deploy').innerHTML = `Deployed to <strong>${escapeHtml(body.endpoint_name)}</strong> (${escapeHtml(body.deployment_name)}). ${body.scoring_uri ? `Scoring URI: <a href="${escapeHtml(body.scoring_uri)}" target="_blank" rel="noopener">${escapeHtml(body.scoring_uri)}</a>` : ''}`;
+    rerender();
+  } catch (e){
+    $('aml-deploy').textContent = 'Deploy error: ' + e.message;
+  }
+}
+
 async function trainNow(){
+  // Existing local training path (kept for fallback)
   const target = $('target-col').value.trim();
   if (!state.datasetId){
     appendBubble('ai', 'Please upload a CSV in the Experiment tab to obtain a dataset_id.');
@@ -1382,6 +1560,9 @@ function setupEvents(){
   });
 
   $('btn-train').addEventListener('click', trainNow);
+
+  $('btn-aml-train')?.addEventListener('click', amlTrainNow);
+  $('btn-aml-deploy')?.addEventListener('click', amlDeployNow);
   $('btn-drift').addEventListener('click', driftNow);
 
   $('btn-data-feedback')?.addEventListener('click', askDataFeedback);
@@ -1471,7 +1652,10 @@ async function init(){
   setView('researcher');
   setSafetyPill(false);
 
-  try { await api('/api/health'); } catch (_) {}
+  try {
+    const h = await api('/api/health');
+    if (h?.azure_ml_compute_name) state.amlCompute = h.azure_ml_compute_name;
+  } catch (_) {}
 
   rerender();
 }

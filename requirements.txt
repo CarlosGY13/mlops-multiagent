@@ -8,4 +8,9 @@ scipy==1.11.4
 scikit-learn==1.4.2
 python-multipart==0.0.20
 httpx==0.28.1
+
+# Azure ML SDK v2
+azure-ai-ml>=1.0.0
+azure-identity>=1.15.0
+
 pytest==8.4.1
