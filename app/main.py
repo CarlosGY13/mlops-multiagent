@@ -20,4 +20,12 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 @app.get("/")
 def root():
-    return FileResponse("app/static/index.html")
+    # Prevent stale UI due to aggressive caching of the root HTML.
+    return FileResponse(
+        "app/static/index.html",
+        headers={
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lab Notebook AI</title>
-    <link rel="stylesheet" href="/static/styles.css?v=3" />
+    <link rel="stylesheet" href="/static/styles.css?v=5" />
   </head>
   <body>
     <div class="shell">
@@ -41,6 +41,10 @@
         <div class="tab" role="tab" aria-selected="false" data-tab="t-agent">
           <div class="tab-dot dot-success"></div>
           Agent
+        </div>
+        <div class="tab" role="tab" aria-selected="false" data-tab="t-search">
+          <div class="tab-dot dot-info"></div>
+          Search
         </div>
         <div class="tab" role="tab" aria-selected="false" data-tab="t-results">
           <div class="tab-dot dot-purple"></div>
@@ -190,6 +194,21 @@
               <div id="eda-dual" class="dc-body"></div>
             </div>
 
+            <div class="dual-card" data-dual="ai_feedback">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">AI feedback</div>
+                <div class="dc-tab" data-view="technical">Technical</div>
+              </div>
+              <div id="ai-feedback-dual" class="dc-body">
+                <div class="chat-input-row" style="align-items:center;gap:10px;flex-wrap:wrap">
+                  <button class="lit-btn" id="btn-data-feedback">Ask AI for feedback</button>
+                  <button class="lit-btn" id="btn-data-feedback-clear">Clear</button>
+                  <div class="mini">Uses your Project context + dataset summary to suggest what to check next.</div>
+                </div>
+                <div class="mini" style="margin-top:10px">No feedback yet.</div>
+              </div>
+            </div>
+
             <div class="dual-card" data-dual="balance">
               <div class="dc-tabs">
                 <div class="dc-tab a" data-view="researcher">Outcome balance</div>
@@ -253,11 +272,59 @@
 
           <!-- TAB 3: AGENT -->
           <div class="tab-content" id="t-agent" role="tabpanel">
+            <div class="context-card">
+              <div class="context-head">
+                <div>
+                  <div class="context-title">Project context</div>
+                  <div class="context-sub">Add anything you consider important: research goals, process/protocol, key variables, units, outcome definition, constraints, and what “success” looks like.</div>
+                </div>
+                <div class="context-actions">
+                  <button class="lit-btn" id="btn-context-template" type="button">Insert template</button>
+                  <button class="lit-btn" id="btn-context-clear" type="button">Clear</button>
+                </div>
+              </div>
+
+              <div class="context-grid">
+                <textarea id="agent-context" class="context-text" rows="5" placeholder="Example (copy/paste and edit):
+
+Goal: …
+Question/Hypothesis: …
+Process/Protocol (steps): …
+Dataset: source, size, what each row represents…
+Key variables: … (and units)
+Outcome/target: … (how it is defined/measured)
+Covariates/confounders: …
+Constraints: … (time, cost, experimental limits)
+What you want to optimize: …"></textarea>
+
+                <div class="context-help">
+                  <div class="mini" style="font-weight:800;color:var(--color-text-secondary)">Quick suggestions</div>
+                  <ul class="context-list">
+                    <li>Goal and success criteria (metric or expected result)</li>
+                    <li>How data was generated (protocol/process, batches, instruments)</li>
+                    <li>What each variable means and its units</li>
+                    <li>Outcome/target (if any) and how it’s defined</li>
+                    <li>Known limitations and risks (bias, confounders)</li>
+                  </ul>
+                  <details class="context-details">
+                    <summary>See a full example</summary>
+                    <pre>Goal: predict treatment response.
+Process/Protocol: weekly measurements for 8 weeks; 2 labs; daily batches.
+Dataset: each row = patient-visit; variables: age(years), sex, dose(mg), biomarker_X(ng/mL), ...
+Outcome/target: responder (yes/no) by clinical criterion.
+Confounders: site, batch, comorbidities.
+Constraints: cannot collect more samples; prefer interpretable models.</pre>
+                  </details>
+                  <div class="context-meta"><span id="context-count">0</span> chars</div>
+                </div>
+              </div>
+            </div>
+
             <div class="chat-area" id="chat-area">
               <div class="bubble bubble-ai">
                 Hi. Describe your protocol, variables, and what you want to optimize. I can propose multivariable variations with explicit rationale.
-                <div class="rationale-box">Write a keyword and I will suggest a multivariable variation; then use “View related research” to load relevant papers in the left panel.</div>
-                <button class="lit-btn" id="btn-open-panel">View related research</button>
+                <div class="rationale-box">Share your protocol + dataset question. For related papers/datasets, use the <strong>Search</strong> tab.</div>
+                <div class="mini" style="margin-top:10px">Search results include an AI insight: how the literature can add context and what metadata could enrich your dataset.</div>
               </div>
             </div>
 
@@ -266,10 +333,41 @@
               <button class="send-btn" id="btn-send">Send</button>
             </div>
 
-            <div class="mini" style="margin-top:8px">Use keywords in the chat input. The same keyword is used when you click “View related research”.</div>
+            <div class="mini" style="margin-top:8px">Use the chat for dataset/protocol questions. Use the <strong>Search</strong> tab to explore related research and datasets.</div>
           </div>
 
-          <!-- TAB 4: RESULTS -->
+          <!-- TAB 4: SEARCH -->
+          <div class="tab-content" id="t-search" role="tabpanel">
+            <div class="section-label">Search related research</div>
+
+            <div class="dual-card">
+              <div class="dc-tabs">
+                <div class="dc-tab a">Search</div>
+                <div class="dc-tab">AI insight</div>
+              </div>
+              <div class="dc-body">
+                <div class="chat-input-row" style="align-items:center;flex-wrap:wrap">
+                  <input id="search-inp" placeholder="Search papers & datasets (e.g., gene expression, smoke exposure, limma)" />
+                  <button class="send-btn" id="btn-search">Search</button>
+                </div>
+                <div class="mini" style="margin-top:8px">Tip: results are used to enrich your project context and suggest metadata to capture in your dataset (units, batch, timepoint, protocol version, etc.).</div>
+
+                <div class="sp-controls" role="tablist" aria-label="Search filters" style="margin-top:10px">
+                  <button id="search-tab-papers" class="sp-tab active" type="button" role="tab" aria-selected="true">Papers</button>
+                  <button id="search-tab-datasets" class="sp-tab" type="button" role="tab" aria-selected="false">Datasets</button>
+                </div>
+
+                <div id="search-results" style="margin-top:10px"></div>
+
+                <div class="note" style="margin-top:12px">
+                  <div class="note-title">AI insight</div>
+                  <div id="search-insight" class="note-body">Run a search to get an AI comment on how these results can add context and how to enrich your dataset with relevant metadata.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 5: RESULTS -->
           <div class="tab-content" id="t-results" role="tabpanel">
             <div class="section-label">Model results</div>
             <div class="metric-row">
@@ -361,7 +459,7 @@
           <div class="sp-body" id="sp-body">
             <div class="sp-card">
               <div class="sp-card-title">Related research</div>
-              <div class="sp-card-sub">Type a keyword in Agent and click “View related research” to populate this panel.</div>
+              <div class="sp-card-sub">Use the Search tab to query related papers and datasets.</div>
               <div class="sp-source">Sources: Europe PMC (papers) · OpenML (datasets)</div>
             </div>
           </div>
@@ -369,6 +467,6 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=3"></script>
+    <script src="/static/app.js?v=5"></script>
   </body>
 </html>

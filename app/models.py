@@ -41,10 +41,26 @@ class LiteratureSearchRequest(BaseModel):
     top_k: int = 5
 
 
-class AgentMessageRequest(BaseModel):
+class ResearchSearchRequest(BaseModel):
+    session_id: Optional[str] = None
     dataset_id: Optional[str] = None
+    user_context: Optional[str] = None
+    query: str
+    top_k: int = 10
+
+
+class AgentMessageRequest(BaseModel):
+    session_id: Optional[str] = None
+    dataset_id: Optional[str] = None
+    user_context: Optional[str] = None
     message: str
     rag_active: bool = False
+
+
+class DataFeedbackRequest(BaseModel):
+    session_id: Optional[str] = None
+    dataset_id: str
+    user_context: Optional[str] = None
 
 
 class AgentMessageResponse(BaseModel):

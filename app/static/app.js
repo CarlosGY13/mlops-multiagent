@@ -1,10 +1,14 @@
 const state = {
   view: 'researcher',
+  sessionId: null,
+  agentContext: '',
   datasetId: null,
   ingest: null,
   eda: null,
   curatedSample: null,
   quarantineSample: null,
+  dataFeedback: null,
+  search: null, // { query, technical, investigator, filter }
   train: null,
   drift: null,
   lastUserMessage: '',
@@ -160,22 +164,12 @@ function _setSidePanelTabsActive(){
   });
 }
 
-function renderSidePanelFromRag(technical){
-  const sp = $('sp-body');
-  sp.innerHTML = '';
+function _renderRagCardsInto(el, technical, { filter='papers', showCountsOnTabs=false, tabs=null } = {}){
+  if (!el) return;
+  el.innerHTML = '';
 
   const papers = technical?.papers || [];
   const datasets = technical?.datasets || [];
-
-  // Update tab labels with counts
-  if ($('sp-tab-papers')) $('sp-tab-papers').textContent = `Papers (${papers.length})`;
-  if ($('sp-tab-datasets')) $('sp-tab-datasets').textContent = `Datasets (${datasets.length})`;
-
-  // Default filter: show papers if available, else datasets
-  if (state.sidePanelFilter === 'papers' && papers.length === 0 && datasets.length > 0) state.sidePanelFilter = 'datasets';
-  if (state.sidePanelFilter === 'datasets' && datasets.length === 0 && papers.length > 0) state.sidePanelFilter = 'papers';
-
-  _setSidePanelTabsActive();
 
   const mkBadge = (txt, kind='') => {
     const cls = kind ? `sp-badge ${kind}` : 'sp-badge';
@@ -210,35 +204,95 @@ function renderSidePanelFromRag(technical){
     `;
   };
 
+  const renderPapers = () => {
+    if (!papers.length){
+      el.innerHTML = `<div class="sp-card"><div class="sp-card-title">No papers</div><div class="sp-card-sub">Try a more specific query.</div></div>`;
+      return;
+    }
+    el.innerHTML = papers.slice(0, 10).map(x => renderItem(x, { showSourceBadge: false })).join('');
+  };
+
+  const renderDatasets = () => {
+    if (!datasets.length){
+      el.innerHTML = `<div class="sp-card"><div class="sp-card-title">No datasets</div><div class="sp-card-sub">Try another keyword (OpenML uses dataset tags/names).</div></div>`;
+      return;
+    }
+    el.innerHTML = datasets.slice(0, 10).map(x => renderItem(x, { showSourceBadge: true })).join('');
+  };
+
   if (papers.length === 0 && datasets.length === 0){
-    sp.innerHTML = `
+    el.innerHTML = `
       <div class="sp-card">
         <div class="sp-card-title">No results</div>
-        <div class="sp-card-sub">No related papers/datasets found for this keyword. Try another query.</div>
+        <div class="sp-card-sub">No related papers/datasets found for this query. Try another one.</div>
         <div class="sp-source">Sources: Europe PMC · OpenML</div>
       </div>
     `;
     return;
   }
 
-  const renderPapers = () => {
-    if (!papers.length){
-      sp.innerHTML = `<div class="sp-card"><div class="sp-card-title">No papers</div><div class="sp-card-sub">Try a more specific biomedical keyword.</div></div>`;
-      return;
-    }
-    sp.innerHTML = papers.slice(0, 10).map(x => renderItem(x, { showSourceBadge: false })).join('');
-  };
-
-  const renderDatasets = () => {
-    if (!datasets.length){
-      sp.innerHTML = `<div class="sp-card"><div class="sp-card-title">No datasets</div><div class="sp-card-sub">Try another keyword (OpenML uses dataset tags/names).</div></div>`;
-      return;
-    }
-    sp.innerHTML = datasets.slice(0, 10).map(x => renderItem(x, { showSourceBadge: true })).join('');
-  };
-
-  if (state.sidePanelFilter === 'datasets') renderDatasets();
+  if (filter === 'datasets') renderDatasets();
   else renderPapers();
+}
+
+function renderSearch(){
+  const resEl = $('search-results');
+  const insightEl = $('search-insight');
+  if (!resEl || !insightEl) return;
+
+  const tech = state.search?.technical;
+  const inv = state.search?.investigator;
+  const filter = state.search?.filter || 'papers';
+
+  const papers = tech?.papers || [];
+  const datasets = tech?.datasets || [];
+
+  if ($('search-tab-papers')){
+    $('search-tab-papers').textContent = `Papers (${papers.length})`;
+    $('search-tab-papers').classList.toggle('active', filter === 'papers');
+    $('search-tab-papers').setAttribute('aria-selected', filter === 'papers' ? 'true' : 'false');
+  }
+  if ($('search-tab-datasets')){
+    $('search-tab-datasets').textContent = `Datasets (${datasets.length})`;
+    $('search-tab-datasets').classList.toggle('active', filter === 'datasets');
+    $('search-tab-datasets').setAttribute('aria-selected', filter === 'datasets' ? 'true' : 'false');
+  }
+
+  if (!tech){
+    resEl.innerHTML = '<div class="mini">Run a search to see results.</div>';
+    insightEl.textContent = 'Run a search to get an AI comment on how these results can add context and how to enrich your dataset with relevant metadata.';
+    return;
+  }
+
+  _renderRagCardsInto(resEl, tech, { filter });
+
+  const insight = inv?.insight || '';
+  const rationale = inv?.rationale || '';
+  if (insight){
+    insightEl.innerHTML = `${escapeHtml(insight)}${rationale ? `<div class="rationale-box">${escapeHtml(rationale)}</div>` : ''}`;
+  } else {
+    insightEl.textContent = 'No AI insight returned.';
+  }
+}
+
+function renderSidePanelFromRag(technical){
+  const sp = $('sp-body');
+  sp.innerHTML = '';
+
+  const papers = technical?.papers || [];
+  const datasets = technical?.datasets || [];
+
+  // Update tab labels with counts
+  if ($('sp-tab-papers')) $('sp-tab-papers').textContent = `Papers (${papers.length})`;
+  if ($('sp-tab-datasets')) $('sp-tab-datasets').textContent = `Datasets (${datasets.length})`;
+
+  // Default filter: show papers if available, else datasets
+  if (state.sidePanelFilter === 'papers' && papers.length === 0 && datasets.length > 0) state.sidePanelFilter = 'datasets';
+  if (state.sidePanelFilter === 'datasets' && datasets.length === 0 && papers.length > 0) state.sidePanelFilter = 'papers';
+
+  _setSidePanelTabsActive();
+
+  _renderRagCardsInto(sp, technical, { filter: state.sidePanelFilter });
 }
 
 function researcherQualityNarrative(ingest){
@@ -456,6 +510,12 @@ function rerender(){
     ? technicalBlock('Variables (technical)', state.eda?.technical?.features || state.ingest?.schema_info)
     : variablesNarrative();
 
+  if ($('ai-feedback-dual')){
+    $('ai-feedback-dual').innerHTML = (state.view === 'technical')
+      ? technicalBlock('AI feedback (technical)', state.dataFeedback?.technical || { note: 'No feedback yet.' })
+      : aiFeedbackNarrative();
+  }
+
   if (state.view === 'researcher'){
     $('exp-dual').innerHTML = state.ingest ? researcherQualityNarrative(state.ingest) : $('exp-dual').innerHTML;
     $('data-dual').innerHTML = state.ingest
@@ -509,6 +569,8 @@ function rerender(){
       plotDistribution();
     } catch (_) {}
   }
+
+  try { renderSearch(); } catch (_) {}
 
   if (state.drift?.technical){
     const detected = !!state.drift.technical.drift_detected;
@@ -1070,14 +1132,15 @@ async function sendAgentMessage(){
     const body = await api('/api/part3/agent/message', {
       method:'POST',
       json: {
+        session_id: state.sessionId,
+        user_context: state.agentContext,
         dataset_id: state.datasetId,
         message: msg,
       }
     });
 
     const rationale = `<div class="rationale-box">${escapeHtml(body.rationale)}</div>`;
-    const btn = `<button class="lit-btn" onclick="window.__openPanelAndSearch()">View related research</button>`;
-    appendBubble('ai', `${escapeHtml(body.answer)}${rationale}${btn}`);
+    appendBubble('ai', `${escapeHtml(body.answer)}${rationale}<div class="mini" style="margin-top:8px">Tip: use the <strong>Search</strong> tab to find related research and get an AI insight.</div>`);
 
     if (body.side_panel?.technical?.sources?.length){
       const sources = body.side_panel.technical.sources;
@@ -1099,15 +1162,33 @@ async function sendAgentMessage(){
   }
 }
 
-async function searchRelated(){
-  const q = state.lastUserMessage || $('chat-inp').value.trim();
-  if (!q) {
-    openPanel();
-    return;
-  }
-  const body = await api('/api/part3/rag/search', { method:'POST', json: { query: q, top_k: 10 } });
-  state.ragCache = body.technical;
-  renderSidePanelFromRag(body.technical);
+async function runSearch(){
+  const q = ($('search-inp')?.value || '').trim();
+  if (!q) return;
+
+  // optimistic UI
+  $('search-insight').textContent = 'Searching…';
+  $('search-results').innerHTML = '<div class="mini">Loading…</div>';
+
+  const body = await api('/api/part3/search', {
+    method:'POST',
+    json: {
+      session_id: state.sessionId,
+      user_context: state.agentContext,
+      dataset_id: state.datasetId,
+      query: q,
+      top_k: 10,
+    }
+  });
+
+  state.search = {
+    query: q,
+    technical: body.technical,
+    investigator: body.investigator,
+    filter: state.search?.filter || 'papers'
+  };
+
+  renderSearch();
 }
 
 async function trainNow(){
@@ -1198,7 +1279,53 @@ function setupUploadZones(){
   bindUploadZone('upload-zone-data', 'dataFile');
 }
 
+function _updateContextCount(){
+  const el = $('context-count');
+  if (!el) return;
+  el.textContent = String((state.agentContext || '').length);
+}
+
 function setupEvents(){
+  // Agent context persistence
+  const ctx = $('agent-context');
+  if (ctx){
+    ctx.addEventListener('input', () => {
+      state.agentContext = String(ctx.value || '');
+      localStorage.setItem('agent_context', state.agentContext);
+      _updateContextCount();
+    });
+  }
+
+  $('btn-context-clear')?.addEventListener('click', () => {
+    state.agentContext = '';
+    localStorage.setItem('agent_context', state.agentContext);
+    if ($('agent-context')) $('agent-context').value = '';
+    _updateContextCount();
+  });
+
+  $('btn-context-template')?.addEventListener('click', () => {
+    const template = [
+      'Goal: ',
+      'Question/Hypothesis: ',
+      'Process/Protocol (steps): ',
+      'Dataset: source, size, what each row represents: ',
+      'Key variables (and units): ',
+      'Outcome/target (definition): ',
+      'Covariates/confounders: ',
+      'Constraints: ',
+      'What you want to optimize: ',
+    ].join('\n');
+
+    if (!state.agentContext.trim()){
+      state.agentContext = template;
+    } else {
+      state.agentContext = (state.agentContext.trimEnd() + '\n\n' + template);
+    }
+
+    localStorage.setItem('agent_context', state.agentContext);
+    if ($('agent-context')) $('agent-context').value = state.agentContext;
+    _updateContextCount();
+  });
   document.querySelectorAll('.tab').forEach((t) => {
     t.addEventListener('click', () => setTab(t.dataset.tab));
   });
@@ -1210,11 +1337,24 @@ function setupEvents(){
     t.addEventListener('click', () => setView(t.dataset.view));
   });
 
-  $('btn-open-panel').addEventListener('click', async () => {
-    openPanel();
-    await searchRelated();
-  });
   $('sp-close').addEventListener('click', closePanel);
+
+  $('btn-search')?.addEventListener('click', runSearch);
+  $('search-inp')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') runSearch();
+  });
+
+  // Search filter tabs
+  $('search-tab-papers')?.addEventListener('click', () => {
+    if (!state.search) state.search = { filter: 'papers' };
+    state.search.filter = 'papers';
+    renderSearch();
+  });
+  $('search-tab-datasets')?.addEventListener('click', () => {
+    if (!state.search) state.search = { filter: 'datasets' };
+    state.search.filter = 'datasets';
+    renderSearch();
+  });
 
   // Side panel filter tabs
   $('sp-tab-papers')?.addEventListener('click', () => {
@@ -1243,6 +1383,12 @@ function setupEvents(){
   $('btn-train').addEventListener('click', trainNow);
   $('btn-drift').addEventListener('click', driftNow);
 
+  $('btn-data-feedback')?.addEventListener('click', askDataFeedback);
+  $('btn-data-feedback-clear')?.addEventListener('click', () => {
+    state.dataFeedback = null;
+    rerender();
+  });
+
   // EDA controls are re-rendered; use event delegation.
   document.addEventListener('click', (e) => {
     if (e.target?.id === 'btn-eda') runEDA();
@@ -1265,14 +1411,59 @@ function setupEvents(){
   $('dist-logy')?.addEventListener('change', () => plotDistribution());
   $('dist-bins')?.addEventListener('change', () => runEDA({ silent:true }));
 
-  window.__openPanelAndSearch = async () => {
-    openPanel();
-    await searchRelated();
-  };
+  // Side panel is still available for future expansion; Search tab is the primary UI for related research now.
+
+}
+
+function _getOrCreateSessionId(){
+  const existing = localStorage.getItem('session_id');
+  if (existing) return existing;
+  let sid = '';
+  try { sid = crypto.randomUUID(); } catch (_) { sid = `sess_${Math.random().toString(16).slice(2)}_${Date.now()}`; }
+  localStorage.setItem('session_id', sid);
+  return sid;
+}
+
+function aiFeedbackNarrative(){
+  if (!state.dataFeedback){
+    return '<strong>No feedback yet.</strong><div class="mini" style="margin-top:6px">Click “Ask AI for feedback” after uploading a dataset.</div>';
+  }
+  const inv = state.dataFeedback.investigator || {};
+  const summary = inv.summary ? `<strong>${escapeHtml(inv.summary)}</strong>` : '<strong>AI feedback</strong>';
+  const bullets = (inv.bullets || []).slice(0, 8).map(x => `<li>${escapeHtml(x)}</li>`).join('');
+  const warns = (inv.warnings || []).slice(0, 6).map(x => `<div class="mini" style="color:var(--color-text-warning)">• ${escapeHtml(x)}</div>`).join('');
+  return `${summary}${warns ? `<div style="margin-top:8px">${warns}</div>` : ''}${bullets ? `<ul style="margin:10px 0 0 18px">${bullets}</ul>` : ''}`;
+}
+
+async function askDataFeedback(){
+  if (!state.datasetId){
+    alert('Upload a dataset first.');
+    return;
+  }
+  try {
+    const body = await api('/api/part3/data/feedback', {
+      method:'POST',
+      json: {
+        session_id: state.sessionId,
+        user_context: state.agentContext,
+        dataset_id: state.datasetId,
+      }
+    });
+    state.dataFeedback = body;
+    rerender();
+    setTab('t-data');
+  } catch (e){
+    alert('AI feedback error: ' + e.message);
+  }
 }
 
 async function init(){
   applyTheme(getInitialTheme());
+
+  state.sessionId = _getOrCreateSessionId();
+  state.agentContext = localStorage.getItem('agent_context') || '';
+  if ($('agent-context')) $('agent-context').value = state.agentContext;
+  _updateContextCount();
 
   setupEvents();
   setupUploadZones();
