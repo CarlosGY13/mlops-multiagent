@@ -1422,7 +1422,8 @@ async function amlDeployNow(){
     $('aml-deploy').innerHTML = `Deployed to <strong>${escapeHtml(body.endpoint_name)}</strong> (${escapeHtml(body.deployment_name)}). ${body.scoring_uri ? `Scoring URI: <a href="${escapeHtml(body.scoring_uri)}" target="_blank" rel="noopener">${escapeHtml(body.scoring_uri)}</a>` : ''}`;
     rerender();
   } catch (e){
-    $('aml-deploy').textContent = 'Deploy error: ' + e.message;
+    const msg = String(e?.message || '').replace(/\x1B\[[0-9;]*m/g, '');
+    $('aml-deploy').textContent = 'Deploy error: ' + msg;
   }
 }
 

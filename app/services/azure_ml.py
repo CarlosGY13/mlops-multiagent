@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import threading
 from dataclasses import dataclass
@@ -13,6 +14,29 @@ from app.services.storage import BASE_DATA
 
 _ML_CLIENT_LOCK = threading.Lock()
 _ML_CLIENT_CACHE: Dict[Tuple[Optional[str], str, str, str], Any] = {}
+
+
+def _sanitize_endpoint_name(name: Optional[str], *, fallback: str) -> str:
+    raw = (name or "").strip()
+    if not raw:
+        return fallback
+
+    s = raw.lower().replace("_", "-").replace(" ", "-")
+    s = re.sub(r"[^a-z0-9-]", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+
+    if not s:
+        return fallback
+
+    if not re.match(r"^[a-z]", s):
+        s = f"lab-{s}".lower()
+
+    # Azure ML endpoint names are typically limited (commonly 32 chars). Keep it safe.
+    s = s[:32].rstrip("-")
+    if len(s) < 3:
+        return fallback
+
+    return s
 
 
 class AzureMLNotConfigured(RuntimeError):
@@ -314,7 +338,8 @@ def deploy_from_job(*, job_id: str, model_id: str, endpoint_name: Optional[str])
 
     ml_client = get_ml_client()
 
-    ep_name = (endpoint_name or f"labnotebookai-{job_id[:12]}").lower().replace("_", "-")
+    fallback = f"labnotebookai-{job_id[:12]}".lower()
+    ep_name = _sanitize_endpoint_name(endpoint_name, fallback=fallback)
     deployment_name = "blue"
 
     # Model artifact path: outputs/out_dir/models/<model_id>/model.pkl
