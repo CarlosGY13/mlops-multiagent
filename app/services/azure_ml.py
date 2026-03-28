@@ -92,7 +92,17 @@ def get_ml_client():
 def ensure_compute(ml_client, *, name: str) -> None:
     """Ensure the configured AML compute exists; create it if missing."""
     s = get_settings()
-    _, _, _, AmlCompute, ResourceNotFoundError, *_ = _lazy_imports()
+    (
+        _AzureCliCredential,
+        _ChainedTokenCredential,
+        _DefaultAzureCredential,
+        _MLClient,
+        _Environment,
+        AmlCompute,
+        ResourceNotFoundError,
+        _command,
+        _Input,
+    ) = _lazy_imports()
 
     try:
         ml_client.compute.get(name)
@@ -122,7 +132,17 @@ def submit_training_job(
     if s.use_local_mock:
         return {"job_id": f"mock-{dataset_id}", "status": "mock", "studio_url": None}
 
-    _, _, Environment, _, _, command, Input = _lazy_imports()
+    (
+        _AzureCliCredential,
+        _ChainedTokenCredential,
+        _DefaultAzureCredential,
+        _MLClient,
+        Environment,
+        _AmlCompute,
+        _ResourceNotFoundError,
+        command,
+        Input,
+    ) = _lazy_imports()
     ml_client = get_ml_client()
 
     # Auto-create compute if missing (saves manual setup for demos)
@@ -215,7 +235,17 @@ def deploy_from_job(*, job_id: str, model_id: str, endpoint_name: Optional[str])
             "scoring_uri": None,
         }
 
-    _, _, Environment, *_ = _lazy_imports()
+    (
+        _AzureCliCredential,
+        _ChainedTokenCredential,
+        _DefaultAzureCredential,
+        _MLClient,
+        Environment,
+        _AmlCompute,
+        _ResourceNotFoundError,
+        _command,
+        _Input,
+    ) = _lazy_imports()
     from azure.ai.ml.entities import ManagedOnlineEndpoint, ManagedOnlineDeployment, Model  # type: ignore
 
     ml_client = get_ml_client()
