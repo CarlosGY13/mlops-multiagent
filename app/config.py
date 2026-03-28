@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     azure_subscription_id: Optional[str] = None
     azure_resource_group: Optional[str] = None
     azure_region: Optional[str] = None
+    azure_tenant_id: Optional[str] = None
 
     # Azure ML workspace
     azure_ml_workspace_name: Optional[str] = None

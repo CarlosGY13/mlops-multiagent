@@ -17,7 +17,11 @@ class AzureMLNotConfigured(RuntimeError):
 
 def _lazy_imports():
     try:
-        from azure.identity import DefaultAzureCredential  # type: ignore
+        from azure.identity import (  # type: ignore
+            AzureCliCredential,
+            ChainedTokenCredential,
+            DefaultAzureCredential,
+        )
         from azure.ai.ml import MLClient  # type: ignore
         from azure.ai.ml.entities import Environment, AmlCompute  # type: ignore
         from azure.ai.ml import command, Input  # type: ignore
@@ -29,7 +33,17 @@ def _lazy_imports():
             f"Original error: {type(e).__name__}: {e}"
         ) from e
 
-    return DefaultAzureCredential, MLClient, Environment, AmlCompute, ResourceNotFoundError, command, Input
+    return (
+        AzureCliCredential,
+        ChainedTokenCredential,
+        DefaultAzureCredential,
+        MLClient,
+        Environment,
+        AmlCompute,
+        ResourceNotFoundError,
+        command,
+        Input,
+    )
 
 
 @dataclass
@@ -49,9 +63,29 @@ def _require_workspace_settings() -> Tuple[str, str, str]:
 
 
 def get_ml_client():
-    DefaultAzureCredential, MLClient, *_ = _lazy_imports()
+    (
+        AzureCliCredential,
+        ChainedTokenCredential,
+        DefaultAzureCredential,
+        MLClient,
+        *_
+    ) = _lazy_imports()
+
+    s = get_settings()
     sub, rg, ws = _require_workspace_settings()
-    cred = DefaultAzureCredential(exclude_interactive_browser_credential=False)
+
+    # If a tenant is provided, force Azure CLI auth to request tokens from that tenant.
+    # This prevents "InvalidAuthenticationTokenTenant" when your CLI is logged into a different directory.
+    if s.azure_tenant_id:
+        base = DefaultAzureCredential(
+            exclude_interactive_browser_credential=False,
+            exclude_azure_cli_credential=True,
+        )
+        cli = AzureCliCredential(tenant_id=s.azure_tenant_id, subscription=sub)
+        cred = ChainedTokenCredential(base, cli)
+    else:
+        cred = DefaultAzureCredential(exclude_interactive_browser_credential=False)
+
     return MLClient(credential=cred, subscription_id=sub, resource_group_name=rg, workspace_name=ws)
 
 
