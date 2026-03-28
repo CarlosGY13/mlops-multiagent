@@ -15,6 +15,16 @@ class AzureMLNotConfigured(RuntimeError):
     pass
 
 
+def _raise_friendly_tenant_error(e: Exception, *, tenant_id: str, subscription_id: str) -> None:
+    msg = str(e)
+    if "InvalidAuthenticationTokenTenant" in msg:
+        raise RuntimeError(
+            "Azure tenant mismatch for this subscription. "
+            f"Please run: az logout && az login --tenant {tenant_id} && az account set --subscription {subscription_id} "
+            "then restart the server."
+        ) from e
+
+
 def _lazy_imports():
     try:
         from azure.identity import (  # type: ignore
@@ -74,15 +84,11 @@ def get_ml_client():
     s = get_settings()
     sub, rg, ws = _require_workspace_settings()
 
-    # If a tenant is provided, force Azure CLI auth to request tokens from that tenant.
-    # This prevents "InvalidAuthenticationTokenTenant" when your CLI is logged into a different directory.
+    # If a tenant is provided, hard-pin authentication to that tenant.
+    # Using AzureCliCredential *only* avoids accidentally picking a token from a different tenant
+    # (e.g., cached Visual Studio/managed identity/env creds).
     if s.azure_tenant_id:
-        base = DefaultAzureCredential(
-            exclude_interactive_browser_credential=False,
-            exclude_azure_cli_credential=True,
-        )
-        cli = AzureCliCredential(tenant_id=s.azure_tenant_id, subscription=sub)
-        cred = ChainedTokenCredential(base, cli)
+        cred = AzureCliCredential(tenant_id=s.azure_tenant_id, subscription=sub)
     else:
         cred = DefaultAzureCredential(exclude_interactive_browser_credential=False)
 
@@ -146,7 +152,12 @@ def submit_training_job(
     ml_client = get_ml_client()
 
     # Auto-create compute if missing (saves manual setup for demos)
-    ensure_compute(ml_client, name=s.azure_ml_compute_name)
+    try:
+        ensure_compute(ml_client, name=s.azure_ml_compute_name)
+    except Exception as e:
+        if s.azure_tenant_id:
+            _raise_friendly_tenant_error(e, tenant_id=s.azure_tenant_id, subscription_id=_require_workspace_settings()[0])
+        raise
 
     data_path = BASE_DATA / "curated" / f"{dataset_id}.csv"
     if not data_path.exists():
@@ -187,7 +198,12 @@ def submit_training_job(
         description="Feature engineering (drop columns) + multi-model training.",
     )
 
-    created = ml_client.jobs.create_or_update(job)
+    try:
+        created = ml_client.jobs.create_or_update(job)
+    except Exception as e:
+        if s.azure_tenant_id:
+            _raise_friendly_tenant_error(e, tenant_id=s.azure_tenant_id, subscription_id=_require_workspace_settings()[0])
+        raise
     studio_url = getattr(created, "studio_url", None)
     return {"job_id": created.name, "status": str(created.status), "studio_url": studio_url}
 
@@ -198,7 +214,12 @@ def get_job_status(job_id: str) -> Dict[str, Any]:
         return {"job_id": job_id, "status": "mock", "details": {"mode": "mock"}, "results": None}
 
     ml_client = get_ml_client()
-    job = ml_client.jobs.get(job_id)
+    try:
+        job = ml_client.jobs.get(job_id)
+    except Exception as e:
+        if s.azure_tenant_id:
+            _raise_friendly_tenant_error(e, tenant_id=s.azure_tenant_id, subscription_id=_require_workspace_settings()[0])
+        raise
     status = str(job.status)
 
     results = None
@@ -257,7 +278,12 @@ def deploy_from_job(*, job_id: str, model_id: str, endpoint_name: Optional[str])
     # We register the whole model folder so scoring can load it.
     model_path = f"azureml://jobs/{job_id}/outputs/out_dir/paths/models/{model_id}"
     model = Model(path=model_path, name=f"labnotebookai-{model_id}")
-    reg = ml_client.models.create_or_update(model)
+    try:
+        reg = ml_client.models.create_or_update(model)
+    except Exception as e:
+        if s.azure_tenant_id:
+            _raise_friendly_tenant_error(e, tenant_id=s.azure_tenant_id, subscription_id=_require_workspace_settings()[0])
+        raise
 
     code_dir = Path(__file__).resolve().parents[1] / "azureml"
     env = Environment(
