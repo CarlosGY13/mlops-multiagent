@@ -251,25 +251,36 @@ def build_search_insight(
         set_user_context(session_id, user_context)
     effective_context = get_effective_context(session_id, user_context)
 
-    # Compact evidence for prompt
+    # Compact evidence for prompt (include stable IDs so the insight can reference items)
     p = [
         {
+            "id": f"P{i+1}",
             "title": x.get("title"),
             "year": x.get("year"),
             "venue": x.get("venue"),
             "url": x.get("url"),
         }
-        for x in (papers or [])[:6]
+        for i, x in enumerate((papers or [])[:6])
     ]
-    d = [{"title": x.get("title"), "url": x.get("url"), "source": x.get("source")} for x in (datasets or [])[:6]]
+    d = [
+        {"id": f"D{i+1}", "title": x.get("title"), "url": x.get("url"), "source": x.get("source")}
+        for i, x in enumerate((datasets or [])[:6])
+    ]
 
     cfg = _foundry_cfg()
     if os.getenv("PYTEST_CURRENT_TEST") or settings.use_local_mock or not is_configured(cfg):
+        refs: List[str] = []
+        if p:
+            refs.append(f"[{p[0]['id']}]")
+        if d:
+            refs.append(f"[{d[0]['id']}]")
+        ref_txt = (" " + " ".join(refs)) if refs else ""
         return {
             "insight": (
-                "These related studies can help you validate variable definitions, typical covariates, and expected ranges. "
-                "Use them to refine your project context, and to decide what metadata (batch, units, protocol version, timepoint) "
-                "should be added to your dataset for stronger analysis." 
+                "These related papers/datasets can help you validate variable definitions, typical covariates, and expected ranges."
+                + ref_txt
+                + " Use them to refine your project context and decide what metadata (batch, units, protocol version, timepoint) "
+                "should be added to your dataset for stronger analysis."
             ),
             "rationale": "Rationale: literature-backed context reduces ambiguity and improves traceability.",
         }
@@ -282,17 +293,20 @@ def build_search_insight(
         "You are helping a researcher interpret 'related research' search results. "
         "Write a concise AI comment explaining: (1) how these papers/datasets can add context, "
         "(2) what metadata fields could enrich the user's dataset, and (3) 2-3 next actions.\n\n"
-        "Return in English.\n"
+        "Important: explicitly reference specific items by their IDs in brackets (e.g., [P2], [D1]). "
+        "If possible, mention at least two IDs so the user can map your advice to the list.\n\n"
+        "Return in English (always).\n"
         "Output format (exact):\n"
         "ANSWER:\n<comment>\n\nRATIONALE:\n<why this helps>\n"
     )
 
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": _base_system_prompt()},
+        {"role": "system", "content": "Language: English."},
         {"role": "system", "content": "Persistent project context (always in scope):\n" + (effective_context or "NOT PROVIDED")},
         {"role": "system", "content": "Search query:\n" + query},
-        {"role": "system", "content": "Top papers (metadata):\n" + json.dumps(p, ensure_ascii=False, indent=2)},
-        {"role": "system", "content": "Top datasets (metadata):\n" + json.dumps(d, ensure_ascii=False, indent=2)},
+        {"role": "system", "content": "Top papers (metadata, with IDs):\n" + json.dumps(p, ensure_ascii=False, indent=2)},
+        {"role": "system", "content": "Top datasets (metadata, with IDs):\n" + json.dumps(d, ensure_ascii=False, indent=2)},
     ]
     if dataset_ctx:
         messages.append({"role": "system", "content": f"Dataset context (dataset_id={dataset_id}):\n{dataset_ctx}"})

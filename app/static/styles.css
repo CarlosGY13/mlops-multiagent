@@ -156,6 +156,7 @@ body{font-family:var(--font-sans);color:var(--color-text-primary);background:var
 .sp-section-title{font-size:10px;font-weight:900;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.10em;margin:8px 0 6px}
 .sp-badges{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px}
 .sp-badge{font-size:10px;font-weight:900;padding:2px 8px;border-radius:999px;border:0.5px solid var(--color-border-tertiary);background:rgba(127,127,127,0.10);color:var(--color-text-secondary)}
+.sp-badge.idx{background:rgba(30,90,168,0.10);border-color:var(--color-border-info);color:var(--color-text-info)}
 .sp-badge.src{background:var(--color-background-info);border-color:var(--color-border-info);color:var(--color-text-info)}
 .sp-badge.oa{background:var(--color-background-success);border-color:var(--color-border-success);color:var(--color-text-success)}
 .sp-badge.cite{background:rgba(127,127,127,0.10)}

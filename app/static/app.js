@@ -176,11 +176,12 @@ function _renderRagCardsInto(el, technical, { filter='papers', showCountsOnTabs=
     return `<span class="${cls}">${escapeHtml(txt)}</span>`;
   };
 
-  const renderItem = (x, { showSourceBadge=true } = {}) => {
+  const renderItem = (x, { showSourceBadge=true, idxLabel='' } = {}) => {
     const title = x.title || x.name || 'Related resource';
     const url = x.url || '';
 
     const badges = [];
+    if (idxLabel) badges.push(mkBadge(idxLabel, 'idx'));
     if (showSourceBadge && x.source) badges.push(mkBadge(x.source, 'src'));
     if (x.year) badges.push(mkBadge(x.year));
     if (x.open_access && String(x.open_access).toLowerCase() === 'y') badges.push(mkBadge('OA', 'oa'));
@@ -209,7 +210,7 @@ function _renderRagCardsInto(el, technical, { filter='papers', showCountsOnTabs=
       el.innerHTML = `<div class="sp-card"><div class="sp-card-title">No papers</div><div class="sp-card-sub">Try a more specific query.</div></div>`;
       return;
     }
-    el.innerHTML = papers.slice(0, 10).map(x => renderItem(x, { showSourceBadge: false })).join('');
+    el.innerHTML = papers.slice(0, 10).map((x,i) => renderItem(x, { showSourceBadge: false, idxLabel: `P${i+1}` })).join('');
   };
 
   const renderDatasets = () => {
@@ -217,7 +218,7 @@ function _renderRagCardsInto(el, technical, { filter='papers', showCountsOnTabs=
       el.innerHTML = `<div class="sp-card"><div class="sp-card-title">No datasets</div><div class="sp-card-sub">Try another keyword (OpenML uses dataset tags/names).</div></div>`;
       return;
     }
-    el.innerHTML = datasets.slice(0, 10).map(x => renderItem(x, { showSourceBadge: true })).join('');
+    el.innerHTML = datasets.slice(0, 10).map((x,i) => renderItem(x, { showSourceBadge: true, idxLabel: `D${i+1}` })).join('');
   };
 
   if (papers.length === 0 && datasets.length === 0){
