@@ -17,6 +17,12 @@ class AzureMLNotConfigured(RuntimeError):
 
 def _raise_friendly_tenant_error(e: Exception, *, tenant_id: str, subscription_id: str) -> None:
     msg = str(e)
+    if "Azure CLI not found on path" in msg:
+        raise RuntimeError(
+            "Azure CLI (`az`) is not installed or not on PATH. "
+            "Option A: install Azure CLI and run `az login --tenant ...`. "
+            "Option B: restart the server and the app will prompt an interactive browser login for the configured AZURE_TENANT_ID."
+        ) from e
     if "InvalidAuthenticationTokenTenant" in msg:
         raise RuntimeError(
             "Azure tenant mismatch for this subscription. "
@@ -31,6 +37,7 @@ def _lazy_imports():
             AzureCliCredential,
             ChainedTokenCredential,
             DefaultAzureCredential,
+            InteractiveBrowserCredential,
         )
         from azure.ai.ml import MLClient  # type: ignore
         from azure.ai.ml.entities import Environment, AmlCompute  # type: ignore
@@ -47,6 +54,7 @@ def _lazy_imports():
         AzureCliCredential,
         ChainedTokenCredential,
         DefaultAzureCredential,
+        InteractiveBrowserCredential,
         MLClient,
         Environment,
         AmlCompute,
@@ -77,6 +85,7 @@ def get_ml_client():
         AzureCliCredential,
         ChainedTokenCredential,
         DefaultAzureCredential,
+        InteractiveBrowserCredential,
         MLClient,
         *_
     ) = _lazy_imports()
@@ -85,10 +94,13 @@ def get_ml_client():
     sub, rg, ws = _require_workspace_settings()
 
     # If a tenant is provided, hard-pin authentication to that tenant.
-    # Using AzureCliCredential *only* avoids accidentally picking a token from a different tenant
-    # (e.g., cached Visual Studio/managed identity/env creds).
+    # Prefer Azure CLI when available, but fall back to interactive browser login
+    # (common on machines without `az` installed).
     if s.azure_tenant_id:
-        cred = AzureCliCredential(tenant_id=s.azure_tenant_id, subscription=sub)
+        cred = ChainedTokenCredential(
+            AzureCliCredential(tenant_id=s.azure_tenant_id, subscription=sub),
+            InteractiveBrowserCredential(tenant_id=s.azure_tenant_id),
+        )
     else:
         cred = DefaultAzureCredential(exclude_interactive_browser_credential=False)
 
