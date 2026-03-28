@@ -339,7 +339,7 @@ def deploy_from_job(*, job_id: str, model_id: str, endpoint_name: Optional[str])
 
     imp = _lazy_imports()
     Environment = imp.Environment
-    from azure.ai.ml.entities import ManagedOnlineEndpoint, ManagedOnlineDeployment, Model  # type: ignore
+    from azure.ai.ml.entities import CodeConfiguration, ManagedOnlineEndpoint, ManagedOnlineDeployment, Model  # type: ignore
 
     ml_client = get_ml_client()
 
@@ -376,15 +376,20 @@ def deploy_from_job(*, job_id: str, model_id: str, endpoint_name: Optional[str])
     except Exception as e:
         raise RuntimeError(_strip_ansi(str(e))) from e
 
-    deployment = ManagedOnlineDeployment(
-        name=deployment_name,
-        endpoint_name=ep_name,
-        model=reg,
-        environment=env,
-        code_configuration={"code": str(code_dir), "scoring_script": "score.py"},
-        instance_type="Standard_DS3_v2",
-        instance_count=1,
-    )
+    code_config = CodeConfiguration(code=str(code_dir), scoring_script="score.py")
+
+    try:
+        deployment = ManagedOnlineDeployment(
+            name=deployment_name,
+            endpoint_name=ep_name,
+            model=reg,
+            environment=env,
+            code_configuration=code_config,
+            instance_type="Standard_DS3_v2",
+            instance_count=1,
+        )
+    except Exception as e:
+        raise RuntimeError(_strip_ansi(str(e))) from e
     try:
         ml_client.online_deployments.begin_create_or_update(deployment).result()
     except Exception as e:
