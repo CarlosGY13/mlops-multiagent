@@ -14,59 +14,79 @@ class RagResult:
 
 
 def _mock_results(query: str, top_k: int) -> RagResult:
-    # Offline/local fallback compatible with the live Europe PMC + OpenML contract.
+    # Offline/local fallback compatible with the OpenAlex-focused contract.
     papers = [
         {
             "title": f"Related study {i+1} on {query}",
-            "source": "Europe PMC",
+            "source": "OpenAlex",
             "url": f"https://example.org/papers/{i+1}",
         }
         for i in range(top_k)
     ]
-    datasets = [
-        {
-            "title": f"Similar dataset {i+1} for {query}",
-            "source": "OpenML",
-            "url": f"https://example.org/datasets/{i+1}",
-        }
-        for i in range(top_k)
-    ]
+    datasets: List[Dict[str, str]] = []
     return RagResult(papers=papers, datasets=datasets)
 
 
 # Note: no local cache by design (per product decision). Keep calls live and lightweight.
 
 
-def _europe_pmc_url(source: str, pmc_id: str) -> str:
-    src = (source or "").strip() or "MED"
-    pid = (pmc_id or "").strip()
-    return f"https://europepmc.org/article/{src}/{pid}" if pid else "https://europepmc.org/"
+def _reconstruct_abstract(inv: Dict[str, List[int]]) -> str:
+    if not inv:
+        return ""
+    try:
+        words: List[str] = []
+        for word, positions in inv.items():
+            for pos in positions:
+                if len(words) <= pos:
+                    words.extend([""] * (pos - len(words) + 1))
+                words[pos] = word
+        return " ".join([w for w in words if w]).strip()
+    except Exception:
+        return ""
 
 
-def _search_europe_pmc(query: str, top_k: int, client: httpx.Client) -> List[Dict[str, str]]:
-    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    # Avoid optional params that can yield partial responses depending on backend defaults.
-    params = {"query": query, "format": "json", "pageSize": str(top_k)}
+def _search_openalex(query: str, top_k: int, client: httpx.Client) -> List[Dict[str, str]]:
+    url = "https://api.openalex.org/works"
+    params = {
+        "search": query,
+        "sort": "cited_by_count:desc",
+        "per_page": str(top_k),
+        "filter": "type:article",
+        "select": "id,doi,title,publication_year,cited_by_count,open_access,primary_location,abstract_inverted_index",
+        "mailto": "biopapers@app.local",
+    }
     r = client.get(url, params=params)
     r.raise_for_status()
     js = r.json()
 
-    results = (js.get("resultList") or {}).get("result") or []
+    results = js.get("results") or []
     papers: List[Dict[str, str]] = []
     for x in results[:top_k]:
         title = (x.get("title") or "").strip() or "Untitled paper"
-        source = "Europe PMC"
-        pid = (x.get("id") or "").strip()
-        src = (x.get("source") or "").strip()
-        year = (x.get("pubYear") or "").strip()
-        journal = (x.get("journalTitle") or "").strip()
-        url_item = _europe_pmc_url(src, pid)
-        suffix = ""
-        if year and journal:
-            suffix = f" ({journal}, {year})"
-        elif year:
-            suffix = f" ({year})"
-        papers.append({"title": f"{title}{suffix}", "source": source, "url": url_item})
+        year = str(x.get("publication_year") or "").strip()
+        journal = (((x.get("primary_location") or {}).get("source") or {}).get("display_name") or "").strip()
+        doi = (x.get("doi") or "").strip()
+        doi_url = doi or (x.get("id") or "").strip()
+        citations = x.get("cited_by_count") or 0
+        oa = ((x.get("open_access") or {}).get("is_oa"))
+        abstract = _reconstruct_abstract((x.get("abstract_inverted_index") or {}))
+
+        extras: List[str] = []
+        if journal:
+            extras.append(journal)
+        if year:
+            extras.append(year)
+        suffix = f" ({', '.join(extras)})" if extras else ""
+        oa_tag = " · OA" if oa else ""
+        cite_tag = f" · {citations} citations" if citations else ""
+        abstract_preview = f" · {abstract[:160]}..." if abstract else ""
+        papers.append(
+            {
+                "title": f"{title}{suffix}{oa_tag}{cite_tag}{abstract_preview}",
+                "source": "OpenAlex",
+                "url": doi_url,
+            }
+        )
     return papers
 
 
@@ -116,33 +136,11 @@ def _openml_list_tag(tag: str, top_k: int, client: httpx.Client) -> List[Dict[st
 
 
 def _search_openml(query: str, top_k: int, client: httpx.Client) -> List[Dict[str, str]]:
+    # Kept for compatibility; currently not used by Agent side panel request.
     toks = _tokens(query)
-
-    # Domain-ish tag mapping (best-effort). OpenML tags are community-defined.
-    tag_map = {
-        "gene": "biology",
-        "genome": "biology",
-        "genomic": "biology",
-        "protein": "biology",
-        "rna": "biology",
-        "cell": "biology",
-        "cancer": "biology",
-        "clinical": "health",
-        "patient": "health",
-        "ecg": "health",
-        "mri": "health",
-    }
-    for t in toks:
-        if t in tag_map:
-            hits = _openml_list_tag(tag_map[t], top_k, client)
-            if hits:
-                return hits
-
-    # Try exact-ish dataset name matching.
     candidates = []
     if query:
         candidates.append(query.strip().lower().replace(" ", "_"))
-        candidates.append(query.strip().lower().replace(" ", "-"))
     candidates.extend(toks)
 
     seen = set()
@@ -154,7 +152,6 @@ def _search_openml(query: str, top_k: int, client: httpx.Client) -> List[Dict[st
         hits = _openml_list_data_name(c, top_k, client)
         if hits:
             return hits
-
     return []
 
 
@@ -164,8 +161,8 @@ def search_scientific_context(query: str, top_k: int = 5, use_local_mock: bool =
 
     try:
         with httpx.Client(timeout=20, headers={"User-Agent": "LabNotebookAI/1.1"}) as client:
-            papers = _search_europe_pmc(query, top_k, client)
-            datasets = _search_openml(query, top_k, client)
+            papers = _search_openalex(query, top_k, client)
+            datasets: List[Dict[str, str]] = []
     except Exception:
         # Fail closed into mock to keep UX stable.
         return _mock_results(query, top_k)
@@ -173,7 +170,5 @@ def search_scientific_context(query: str, top_k: int = 5, use_local_mock: bool =
     # Ensure contract: always return exactly top_k items (pad with mock if needed)
     if len(papers) < top_k:
         papers = papers + _mock_results(query, top_k).papers[len(papers) : top_k]
-    if len(datasets) < top_k:
-        datasets = datasets + _mock_results(query, top_k).datasets[len(datasets) : top_k]
 
-    return RagResult(papers=papers[:top_k], datasets=datasets[:top_k])
+    return RagResult(papers=papers[:top_k], datasets=datasets)

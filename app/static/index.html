@@ -153,7 +153,7 @@
             <div class="chat-area" id="chat-area">
               <div class="bubble bubble-ai">
                 Hi. Describe your protocol, variables, and what you want to optimize. I can propose multivariable variations with explicit rationale.
-                <div class="rationale-box">RAG is on-demand: enable it to enrich suggestions with related literature and datasets.</div>
+                <div class="rationale-box">Write a keyword and I will suggest a multivariable variation; then use “View related research” to load relevant papers in the left panel.</div>
                 <button class="lit-btn" id="btn-open-panel">View related research</button>
               </div>
             </div>
@@ -163,13 +163,7 @@
               <button class="send-btn" id="btn-send">Send</button>
             </div>
 
-            <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
-              <label class="mini" style="display:flex;align-items:center;gap:6px">
-                <input id="rag-active" type="checkbox" />
-                RAG on-demand (only when enabled)
-              </label>
-              <button class="lit-btn" id="btn-search">Search related papers/datasets</button>
-            </div>
+            <div class="mini" style="margin-top:8px">Use keywords in the chat input. The same keyword is used when you click “View related research”.</div>
           </div>
 
           <!-- TAB 4: RESULTS -->
@@ -257,9 +251,9 @@
           </div>
           <div class="sp-body" id="sp-body">
             <div class="sp-card">
-              <div class="sp-card-title">On-demand panel</div>
-              <div class="sp-card-sub">Enable RAG or click “Search related papers/datasets” to populate this panel.</div>
-              <div class="sp-source">Europe PMC · Semantic Scholar · Kaggle · OpenML</div>
+              <div class="sp-card-title">Related papers</div>
+              <div class="sp-card-sub">Type a keyword in Agent and click “View related research” to populate this panel.</div>
+              <div class="sp-source">OpenAlex (BioPapers engine)</div>
             </div>
           </div>
         </div>

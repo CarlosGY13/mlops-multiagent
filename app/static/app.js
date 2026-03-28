@@ -154,8 +154,8 @@ function renderSidePanelFromRag(technical){
     card.className = 'sp-card';
     card.innerHTML = `
       <div class="sp-card-title">No results</div>
-      <div class="sp-card-sub">Enable RAG or change your query.</div>
-      <div class="sp-source">Europe PMC · OpenML</div>
+      <div class="sp-card-sub">No papers found for this keyword. Try another query.</div>
+      <div class="sp-source">OpenAlex (BioPapers engine)</div>
     `;
     sp.appendChild(card);
     return;
@@ -164,10 +164,11 @@ function renderSidePanelFromRag(technical){
   [...papers, ...datasets].slice(0, 8).forEach((x) => {
     const card = document.createElement('div');
     card.className = 'sp-card';
+    const url = x.url ? `<a href="${escapeHtml(x.url)}" target="_blank" rel="noopener">${escapeHtml(x.url)}</a>` : '';
     card.innerHTML = `
       <div class="sp-card-title">${escapeHtml(x.title || x.name || 'Related resource')}</div>
       <div class="sp-card-sub">Source: ${escapeHtml(x.source || '')}</div>
-      <div class="sp-source">${escapeHtml(x.url || '')}</div>
+      <div class="sp-source">${url}</div>
     `;
     sp.appendChild(card);
   });
@@ -374,7 +375,6 @@ async function sendAgentMessage(){
       json: {
         dataset_id: state.datasetId,
         message: msg,
-        rag_active: $('rag-active').checked,
       }
     });
 
@@ -385,8 +385,8 @@ async function sendAgentMessage(){
     if (body.side_panel?.technical?.sources?.length){
       const sources = body.side_panel.technical.sources;
       const technical = {
-        papers: sources.filter(x => (x.source || '').toLowerCase().includes('pmc') || (x.source || '').toLowerCase().includes('semantic')),
-        datasets: sources.filter(x => (x.source || '').toLowerCase().includes('kaggle') || (x.source || '').toLowerCase().includes('openml')),
+        papers: sources.filter(x => !((x.source || '').toLowerCase().includes('openml') || (x.source || '').toLowerCase().includes('kaggle'))),
+        datasets: sources.filter(x => (x.source || '').toLowerCase().includes('openml') || (x.source || '').toLowerCase().includes('kaggle')),
       };
       state.ragCache = technical;
       renderSidePanelFromRag(technical);
@@ -520,11 +520,6 @@ function setupEvents(){
   $('btn-send').addEventListener('click', sendAgentMessage);
   $('chat-inp').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') sendAgentMessage();
-  });
-
-  $('btn-search').addEventListener('click', async () => {
-    openPanel();
-    await searchRelated();
   });
 
   $('btn-train').addEventListener('click', trainNow);

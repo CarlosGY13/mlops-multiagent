@@ -23,13 +23,12 @@ def build_agent_answer(message: str, rag_active: bool) -> Dict[str, Any]:
         },
     }
 
-    if rag_active:
-        rag = search_scientific_context(query=message, top_k=5, use_local_mock=settings.use_local_mock)
-        citations = rag.papers[:3]
-        side_panel["investigator"]["items"] = [
-            {"type": "paper", "title": p["title"], "source": p["source"]} for p in rag.papers
-        ] + [{"type": "dataset", "title": d["title"], "source": d["source"]} for d in rag.datasets]
-        side_panel["technical"]["sources"] = rag.papers + rag.datasets
+    rag = search_scientific_context(query=message, top_k=5, use_local_mock=False)
+    citations = rag.papers[:3]
+    side_panel["investigator"]["items"] = [
+        {"type": "paper", "title": p["title"], "source": p["source"]} for p in rag.papers
+    ] + [{"type": "dataset", "title": d["title"], "source": d["source"]} for d in rag.datasets]
+    side_panel["technical"]["sources"] = rag.papers + rag.datasets
 
     answer = (
         "I suggest exploring a multivariable variation that prioritizes interactions between context variables, "
@@ -37,7 +36,7 @@ def build_agent_answer(message: str, rag_active: bool) -> Dict[str, Any]:
     )
     rationale = (
         "Rationale: this keeps the analysis contextual (not isolated), improves scientific traceability, and lets us "
-        "justify each hypothesis with experimental evidence and—when RAG is enabled—related literature."
+        "justify each hypothesis with experimental evidence and related literature."
     )
 
     return {

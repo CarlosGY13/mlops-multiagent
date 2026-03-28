@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from app.config import get_settings
 from app.models import AgentMessageRequest, AgentMessageResponse, LiteratureSearchRequest
 from app.services.agent import build_agent_answer, explain_content_safety_error
 from app.services.rag import search_scientific_context
@@ -13,8 +12,7 @@ router = APIRouter(prefix="/api/part3", tags=["part3-agent-ui"])
 
 @router.post("/rag/search")
 def rag_search(req: LiteratureSearchRequest):
-    settings = get_settings()
-    result = search_scientific_context(req.query, req.top_k, use_local_mock=settings.use_local_mock)
+    result = search_scientific_context(req.query, req.top_k, use_local_mock=False)
     return {
         "investigator": {
             "title": "What other researchers are doing",
@@ -24,7 +22,7 @@ def rag_search(req: LiteratureSearchRequest):
         "technical": {
             "papers": result.papers,
             "datasets": result.datasets,
-            "indexing": "mock" if settings.use_local_mock else "live_http",
+            "indexing": "openalex_live_with_fallback",
         },
     }
 
