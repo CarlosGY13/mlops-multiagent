@@ -16,17 +16,22 @@ _ML_CLIENT_LOCK = threading.Lock()
 _ML_CLIENT_CACHE: Dict[Tuple[Optional[str], str, str, str], Any] = {}
 
 
-def _sanitize_endpoint_name(name: Optional[str], *, fallback: str) -> str:
-    raw = (name or "").strip()
-    if not raw:
-        return fallback
+_ANSI_RE = re.compile(r"\x1B\[[0-9;]*m")
 
-    s = raw.lower().replace("_", "-").replace(" ", "-")
+
+def _strip_ansi(s: str) -> str:
+    return _ANSI_RE.sub("", s or "")
+
+
+def _sanitize_endpoint_name(name: Optional[str], *, fallback: str) -> str:
+    candidate = (name or "").strip() or (fallback or "").strip()
+
+    s = candidate.lower().replace("_", "-").replace(" ", "-")
     s = re.sub(r"[^a-z0-9-]", "-", s)
     s = re.sub(r"-+", "-", s).strip("-")
 
     if not s:
-        return fallback
+        s = "lab-endpoint"
 
     if not re.match(r"^[a-z]", s):
         s = f"lab-{s}".lower()
@@ -34,7 +39,7 @@ def _sanitize_endpoint_name(name: Optional[str], *, fallback: str) -> str:
     # Azure ML endpoint names are typically limited (commonly 32 chars). Keep it safe.
     s = s[:32].rstrip("-")
     if len(s) < 3:
-        return fallback
+        s = "lab-endpoint"
 
     return s
 
@@ -366,7 +371,10 @@ def deploy_from_job(*, job_id: str, model_id: str, endpoint_name: Optional[str])
         auth_mode="key",
         location=s.azure_region or None,
     )
-    ml_client.online_endpoints.begin_create_or_update(endpoint).result()
+    try:
+        ml_client.online_endpoints.begin_create_or_update(endpoint).result()
+    except Exception as e:
+        raise RuntimeError(_strip_ansi(str(e))) from e
 
     deployment = ManagedOnlineDeployment(
         name=deployment_name,
@@ -377,11 +385,17 @@ def deploy_from_job(*, job_id: str, model_id: str, endpoint_name: Optional[str])
         instance_type="Standard_DS3_v2",
         instance_count=1,
     )
-    ml_client.online_deployments.begin_create_or_update(deployment).result()
+    try:
+        ml_client.online_deployments.begin_create_or_update(deployment).result()
+    except Exception as e:
+        raise RuntimeError(_strip_ansi(str(e))) from e
 
-    ml_client.online_endpoints.begin_update(
-        ManagedOnlineEndpoint(name=ep_name, traffic={deployment_name: 100})
-    ).result()
+    try:
+        ml_client.online_endpoints.begin_update(
+            ManagedOnlineEndpoint(name=ep_name, traffic={deployment_name: 100})
+        ).result()
+    except Exception as e:
+        raise RuntimeError(_strip_ansi(str(e))) from e
 
     ep = ml_client.online_endpoints.get(ep_name)
     return {
