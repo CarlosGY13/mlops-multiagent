@@ -122,11 +122,22 @@
               </div>
               <div class="dc-body">
                 <div class="chat-input-row" style="align-items:center;flex-wrap:wrap">
-                  <input id="exp-target" placeholder="target column (required)" style="flex:1;min-width:220px" />
-                  <input id="exp-drop" placeholder="drop columns (comma-separated, optional)" style="flex:2;min-width:260px" />
+                  <select id="exp-target-select" style="flex:1;min-width:220px;padding:9px 10px;font-size:12px;border:0.5px solid var(--color-border-secondary);border-radius:12px;background:var(--color-background-secondary);color:var(--color-text-primary);outline:none;font-family:inherit">
+                    <option value="">Select target column (required)</option>
+                  </select>
                   <button class="send-btn" id="btn-aml-train">Run training</button>
                 </div>
-                <div class="mini" style="margin-top:6px">Runs in Azure ML compute (<span id="aml-compute">cpu-cluster</span>). Use drop columns to remove IDs/leaky fields before training.</div>
+
+                <div style="margin-top:10px">
+                  <div class="mini" style="margin-bottom:6px">Columns to exclude (feature engineering). Select multiple.</div>
+                  <div class="chat-input-row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+                    <button class="lit-btn" id="btn-exp-drop-suggest">Select ID-like columns</button>
+                    <button class="lit-btn" id="btn-exp-drop-clear">Clear</button>
+                  </div>
+                  <div id="exp-drop-box" class="col-check-grid"></div>
+                </div>
+
+                <div class="mini" style="margin-top:10px">Runs in Azure ML compute (<span id="aml-compute">cpu-cluster</span>). Tip: exclude identifiers and leaky columns before training.</div>
 
                 <div id="aml-status" class="status-row hidden" style="margin-top:10px">
                   <div id="aml-status-dot" class="status-dot sd-run"></div>

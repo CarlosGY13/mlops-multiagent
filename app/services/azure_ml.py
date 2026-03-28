@@ -24,7 +24,9 @@ def _lazy_imports():
         from azure.core.exceptions import ResourceNotFoundError  # type: ignore
     except Exception as e:  # pragma: no cover
         raise RuntimeError(
-            "Azure ML SDK is not installed. Install requirements (azure-ai-ml, azure-identity)."
+            "Azure ML SDK import failed. Ensure you're running the server from the same venv where dependencies were installed. "
+            "Try: `source .venv/bin/activate && pip install -r requirements.txt` and start with `python -m uvicorn app.main:app --reload`. "
+            f"Original error: {type(e).__name__}: {e}"
         ) from e
 
     return DefaultAzureCredential, MLClient, Environment, AmlCompute, ResourceNotFoundError, command, Input

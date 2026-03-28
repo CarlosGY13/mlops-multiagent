@@ -118,6 +118,14 @@ body{font-family:var(--font-sans);color:var(--color-text-primary);background:var
 :root[data-theme="dark"] .theme-btn:focus{box-shadow:0 0 0 3px rgba(147,197,253,0.12)}
 
 .tab-bar{display:flex;border-bottom:0.5px solid var(--color-border-tertiary);background:var(--color-background-primary);overflow-x:auto}
+
+/* Experiment AML column selection */
+.col-check-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:180px;overflow:auto;padding:10px;border:0.5px solid var(--color-border-secondary);border-radius:12px;background:var(--color-background-secondary)}
+.col-check{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px}
+.col-check:hover{background:var(--hover-bg)}
+.col-check input{transform:translateY(0.5px)}
+.col-check .lbl{font-size:12px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:root[data-theme="dark"] .col-check-grid{border-color:rgba(148,163,184,0.26)}
 .tab{display:flex;align-items:center;gap:8px;padding:10px 16px;font-size:12px;cursor:pointer;color:var(--color-text-secondary);border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s;flex-shrink:0}
 .tab:hover{color:var(--color-text-primary)}
 .tab.active{color:var(--color-text-primary);border-bottom-color:var(--color-text-info);font-weight:600}

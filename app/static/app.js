@@ -1110,6 +1110,61 @@ function _fillTargetSelect(columns){
   });
 }
 
+function _fillExpTargetSelect(columns, { defaultValue='' } = {}){
+  const sel = $('exp-target-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select target column (required)</option>';
+  (columns || []).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    sel.appendChild(opt);
+  });
+  if (defaultValue) sel.value = defaultValue;
+}
+
+function _renderExpDropCheckboxes(columns){
+  const box = $('exp-drop-box');
+  if (!box) return;
+  const cols = (columns || []).slice();
+  box.innerHTML = cols.map(c => {
+    const id = `exp-drop-${String(c).replaceAll(/[^a-zA-Z0-9_-]/g,'_')}`;
+    return `
+      <label class="col-check" title="${escapeHtml(c)}">
+        <input type="checkbox" data-col="${escapeHtml(c)}" />
+        <span class="lbl">${escapeHtml(c)}</span>
+      </label>
+    `;
+  }).join('') || '<div class="mini">No columns found.</div>';
+}
+
+function _getExpDropSelection(){
+  return Array.from(document.querySelectorAll('#exp-drop-box input[type=checkbox]:checked'))
+    .map(el => el.getAttribute('data-col'))
+    .filter(Boolean);
+}
+
+function _setExpDropSelection(cols){
+  const want = new Set(cols || []);
+  document.querySelectorAll('#exp-drop-box input[type=checkbox]').forEach((el) => {
+    const c = el.getAttribute('data-col');
+    el.checked = !!(c && want.has(c));
+  });
+}
+
+function _enforceTargetNotDropped(target){
+  document.querySelectorAll('#exp-drop-box input[type=checkbox]').forEach((el) => {
+    const c = el.getAttribute('data-col');
+    if (!c) return;
+    if (c === target){
+      el.checked = false;
+      el.disabled = true;
+    } else if (el.disabled){
+      el.disabled = false;
+    }
+  });
+}
+
 async function ingestFile(file){
   setExpStatus('sd-run','Ingesting','processing…');
   try {
@@ -1125,6 +1180,9 @@ async function ingestFile(file){
     $('target-col').value = defaultTarget;
 
     _fillTargetSelect(cols);
+    _fillExpTargetSelect(cols, { defaultValue: defaultTarget });
+    _renderExpDropCheckboxes(cols);
+    _enforceTargetNotDropped(defaultTarget);
 
     // Keep outcome blank by default; user can pick (or click a suggested candidate).
     if ($('target-select')) $('target-select').value = '';
@@ -1286,9 +1344,8 @@ function _renderAmlMetrics(results){
 }
 
 async function amlTrainNow(){
-  const target = ($('exp-target')?.value || '').trim();
-  const dropRaw = ($('exp-drop')?.value || '').trim();
-  const drop = dropRaw ? dropRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const target = ($('exp-target-select')?.value || '').trim();
+  const drop = _getExpDropSelection();
 
   if (!state.datasetId){
     alert('Upload a dataset first.');
@@ -1563,6 +1620,16 @@ function setupEvents(){
 
   $('btn-aml-train')?.addEventListener('click', amlTrainNow);
   $('btn-aml-deploy')?.addEventListener('click', amlDeployNow);
+
+  $('exp-target-select')?.addEventListener('change', (e) => {
+    _enforceTargetNotDropped(e.target.value);
+  });
+  $('btn-exp-drop-clear')?.addEventListener('click', () => _setExpDropSelection([]));
+  $('btn-exp-drop-suggest')?.addEventListener('click', () => {
+    const ids = state.eda?.technical?.features?.id_like_columns || [];
+    _setExpDropSelection(ids);
+    _enforceTargetNotDropped(($('exp-target-select')?.value || '').trim());
+  });
   $('btn-drift').addEventListener('click', driftNow);
 
   $('btn-data-feedback')?.addEventListener('click', askDataFeedback);
@@ -1580,6 +1647,8 @@ function setupEvents(){
       if ($('target-select')) $('target-select').value = col;
       // keep training target synced as a convenience
       if ($('target-col')) $('target-col').value = col;
+      if ($('exp-target-select')) $('exp-target-select').value = col;
+      _enforceTargetNotDropped(col);
       runEDA({ silent:true });
     }
     if (e.target?.id === 'btn-plot') plotDistribution();
