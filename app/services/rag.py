@@ -14,79 +14,104 @@ class RagResult:
 
 
 def _mock_results(query: str, top_k: int) -> RagResult:
-    # Offline/local fallback compatible with the OpenAlex-focused contract.
+    # Offline/local fallback compatible with the UI contract.
     papers = [
         {
             "title": f"Related study {i+1} on {query}",
-            "source": "OpenAlex",
-            "url": f"https://example.org/papers/{i+1}",
+            "source": "Europe PMC (mock)",
+            "year": "",
+            "venue": "",
+            "citations": "",
+            "open_access": "",
+            "snippet": "Mock result (offline mode).",
+            "url": f"https://europepmc.org/",
         }
         for i in range(top_k)
     ]
-    datasets: List[Dict[str, str]] = []
+    datasets = [
+        {
+            "title": f"Example dataset {i+1} for {query}",
+            "source": "OpenML (mock)",
+            "url": "https://www.openml.org/",
+        }
+        for i in range(min(2, top_k))
+    ]
     return RagResult(papers=papers, datasets=datasets)
 
 
 # Note: no local cache by design (per product decision). Keep calls live and lightweight.
 
 
-def _reconstruct_abstract(inv: Dict[str, List[int]]) -> str:
-    if not inv:
+def _compact_snippet(text: str, max_len: int = 220) -> str:
+    t = re.sub(r"\s+", " ", (text or "").strip())
+    if not t:
         return ""
-    try:
-        words: List[str] = []
-        for word, positions in inv.items():
-            for pos in positions:
-                if len(words) <= pos:
-                    words.extend([""] * (pos - len(words) + 1))
-                words[pos] = word
-        return " ".join([w for w in words if w]).strip()
-    except Exception:
-        return ""
+    if len(t) <= max_len:
+        return t
+    return t[: max_len - 3].rstrip() + "..."
 
 
-def _search_openalex(query: str, top_k: int, client: httpx.Client) -> List[Dict[str, str]]:
-    url = "https://api.openalex.org/works"
+def _europe_pmc_url(doi: str, pmid: str, pmcid: str) -> str:
+    doi = (doi or "").strip()
+    if doi:
+        if doi.lower().startswith("http"):
+            return doi
+        return f"https://doi.org/{doi}"
+
+    pmcid = (pmcid or "").strip()
+    if pmcid:
+        pmc = pmcid.replace("PMC", "").strip()
+        return f"https://europepmc.org/article/PMC/{pmc}"
+
+    pmid = (pmid or "").strip()
+    if pmid:
+        return f"https://europepmc.org/article/MED/{pmid}"
+
+    return "https://europepmc.org/"
+
+
+def _search_europe_pmc(query: str, top_k: int, client: httpx.Client) -> List[Dict[str, str]]:
+    # Europe PMC REST API
+    # Docs: https://europepmc.org/RestfulWebService
+    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
     params = {
-        "search": query,
-        "sort": "cited_by_count:desc",
-        "per_page": str(top_k),
-        "filter": "type:article",
-        "select": "id,doi,title,publication_year,cited_by_count,open_access,primary_location,abstract_inverted_index",
-        "mailto": "biopapers@app.local",
+        "query": query,
+        "format": "json",
+        "pageSize": str(top_k),
+        "sort": "CITED desc",
     }
     r = client.get(url, params=params)
     r.raise_for_status()
     js = r.json()
 
-    results = js.get("results") or []
+    results = ((js.get("resultList") or {}).get("result")) or []
     papers: List[Dict[str, str]] = []
     for x in results[:top_k]:
         title = (x.get("title") or "").strip() or "Untitled paper"
-        year = str(x.get("publication_year") or "").strip()
-        journal = (((x.get("primary_location") or {}).get("source") or {}).get("display_name") or "").strip()
+        year = str(x.get("pubYear") or "").strip()
+        venue = (x.get("journalTitle") or x.get("bookOrReportDetails") or "").strip()
         doi = (x.get("doi") or "").strip()
-        doi_url = doi or (x.get("id") or "").strip()
-        citations = x.get("cited_by_count") or 0
-        oa = ((x.get("open_access") or {}).get("is_oa"))
-        abstract = _reconstruct_abstract((x.get("abstract_inverted_index") or {}))
+        pmid = str(x.get("pmid") or "").strip()
+        pmcid = str(x.get("pmcid") or "").strip()
+        citations = str(x.get("citedByCount") or "").strip()
+        oa = str(x.get("isOpenAccess") or "").strip()
+        abs_txt = (x.get("abstractText") or "").strip()
 
-        extras: List[str] = []
-        if journal:
-            extras.append(journal)
-        if year:
-            extras.append(year)
-        suffix = f" ({', '.join(extras)})" if extras else ""
-        oa_tag = " · OA" if oa else ""
-        cite_tag = f" · {citations} citations" if citations else ""
-        abstract_preview = f" · {abstract[:160]}..." if abstract else ""
+        url_item = _europe_pmc_url(doi=doi, pmid=pmid, pmcid=pmcid)
+
         papers.append(
             {
-                "title": f"{title}{suffix}{oa_tag}{cite_tag}{abstract_preview}",
-                "source": "OpenAlex",
-                "url": doi_url,
+                "title": title,
+                "source": "Europe PMC",
+                "year": year,
+                "venue": venue,
+                "citations": citations,
+                "open_access": oa,
+                "snippet": _compact_snippet(abs_txt),
+                "url": url_item,
             }
         )
+
     return papers
 
 
@@ -161,13 +186,14 @@ def search_scientific_context(query: str, top_k: int = 5, use_local_mock: bool =
 
     try:
         with httpx.Client(timeout=20, headers={"User-Agent": "LabNotebookAI/1.1"}) as client:
-            papers = _search_openalex(query, top_k, client)
-            datasets: List[Dict[str, str]] = []
+            papers = _search_europe_pmc(query, top_k, client)
+            # simple dataset search via OpenML tokens
+            datasets = _search_openml(query, top_k=min(5, top_k), client=client)
     except Exception:
         # Fail closed into mock to keep UX stable.
         return _mock_results(query, top_k)
 
-    # Ensure contract: always return exactly top_k items (pad with mock if needed)
+    # Ensure contract: always return exactly top_k paper items (pad with mock if needed)
     if len(papers) < top_k:
         papers = papers + _mock_results(query, top_k).papers[len(papers) : top_k]
 

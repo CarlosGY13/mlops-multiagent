@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -99,7 +99,73 @@ def _corr_matrix(df: pd.DataFrame, max_cols: int = 20) -> Dict[str, Any]:
     return {"columns": cols, "matrix": matrix, "top_pairs": top_pairs}
 
 
-def eda_for_dataset(dataset_id: str) -> Dict[str, Any]:
+def _id_like_columns(df: pd.DataFrame, target_column: Optional[str] = None) -> List[str]:
+    cols: List[str] = []
+    n = max(int(df.shape[0]), 1)
+    for c in df.columns:
+        if target_column and c == target_column:
+            continue
+        name = str(c).lower()
+        if any(t in name for t in ("id", "uuid", "guid", "sample", "subject", "patient")):
+            cols.append(c)
+            continue
+        try:
+            ratio = float(df[c].nunique(dropna=True)) / n
+            if ratio >= 0.98:
+                cols.append(c)
+        except Exception:
+            continue
+    return cols
+
+
+def _target_balance(df: pd.DataFrame, target_column: str) -> Dict[str, Any]:
+    s = df[target_column]
+    total = int(s.shape[0])
+    missing = int(s.isna().sum())
+    s2 = s.dropna()
+
+    nunique = int(s2.astype(str).nunique())
+    inferred_task = "classification" if nunique <= 20 else "regression"
+
+    if inferred_task == "classification":
+        vc = s2.astype(str).value_counts().head(10)
+        counts = [{"label": str(k), "count": int(v), "ratio": float(v / max(len(s2), 1))} for k, v in vc.items()]
+        if len(vc) >= 2:
+            maj = int(vc.iloc[0])
+            minc = int(vc.iloc[-1])
+            imbalance_ratio = float(maj / max(minc, 1))
+        else:
+            imbalance_ratio = 1.0
+
+        recommendation = "Use class_weight first (safer)"
+        if imbalance_ratio >= 3.0:
+            recommendation = "Imbalanced outcome: use class_weight first; consider resampling only with strict validation"
+
+        return {
+            "task": inferred_task,
+            "target": target_column,
+            "total": total,
+            "missing": missing,
+            "unique": nunique,
+            "counts": counts,
+            "imbalance_ratio": imbalance_ratio,
+            "recommendation": recommendation,
+        }
+
+    # regression
+    summ = _numeric_summary(pd.to_numeric(s, errors="coerce"))
+    return {
+        "task": inferred_task,
+        "target": target_column,
+        "total": total,
+        "missing": missing,
+        "unique": nunique,
+        "summary": summ,
+        "recommendation": "Check for skew/outliers and consider transforms; evaluate with R² and error distributions",
+    }
+
+
+def eda_for_dataset(dataset_id: str, target_column: Optional[str] = None, bins: int = 12) -> Dict[str, Any]:
     curated_path = BASE_DATA / "curated" / f"{dataset_id}.csv"
     quarantine_path = BASE_DATA / "quarantine" / f"{dataset_id}.csv"
 
@@ -136,13 +202,36 @@ def eda_for_dataset(dataset_id: str) -> Dict[str, Any]:
     numeric = {
         c: {
             "summary": _numeric_summary(df[c]),
-            "hist": _histogram(df[c], bins=12),
+            "hist": _histogram(df[c], bins=int(bins)),
         }
         for c in numeric_cols[:25]
+        if not (target_column and c == target_column)
     }
-    categorical = {c: _categorical_summary(df[c]) for c in cat_cols[:25]}
+    categorical = {c: _categorical_summary(df[c]) for c in cat_cols[:25] if not (target_column and c == target_column)}
 
-    corr = _corr_matrix(df, max_cols=18)
+    corr = _corr_matrix(df.drop(columns=[target_column]) if target_column and target_column in df.columns else df, max_cols=18)
+
+    id_like = _id_like_columns(df, target_column=target_column)
+    feature_cols = [c for c in df.columns if c not in id_like and c != (target_column or "")]
+
+    # Suggest outcome candidates: low-cardinality, non-ID columns
+    candidates: List[Dict[str, Any]] = []
+    for c in df.columns:
+        if c in id_like:
+            continue
+        if target_column and c == target_column:
+            continue
+        try:
+            nun = int(df[c].dropna().astype(str).nunique())
+            if 2 <= nun <= 10:
+                candidates.append({"column": c, "unique": nun})
+        except Exception:
+            continue
+    candidates.sort(key=lambda x: x.get("unique", 999))
+
+    target_analysis = None
+    if target_column and target_column in df.columns:
+        target_analysis = _target_balance(df, target_column)
 
     return {
         "overview": overview,
@@ -150,6 +239,15 @@ def eda_for_dataset(dataset_id: str) -> Dict[str, Any]:
         "numeric": numeric,
         "categorical": categorical,
         "correlation": corr,
+        "features": {
+            "target_column": target_column,
+            "id_like_columns": id_like,
+            "feature_columns": feature_cols,
+            "numeric_columns": [c for c in numeric_cols if c != (target_column or "")],
+            "categorical_columns": [c for c in cat_cols if c != (target_column or "")],
+            "target_candidates": candidates[:8],
+        },
+        "target_analysis": target_analysis,
         "notes": {
             "sampling": "sampled" if df.shape[0] >= 200_000 else "full",
             "numeric_columns_shown": int(min(len(numeric_cols), 25)),

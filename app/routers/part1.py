@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.models import IngestResponse
@@ -10,6 +12,22 @@ from app.services.storage import BASE_DATA
 import pandas as pd
 
 router = APIRouter(prefix="/api/part1", tags=["part1-ingestion-quality"])
+
+
+@router.get("/curated/sample")
+def curated_sample(dataset_id: str, limit: int = 12):
+    path = BASE_DATA / "curated" / f"{dataset_id}.csv"
+    if not path.exists():
+        return {
+            "investigator": {"summary": "No curated file available for this dataset."},
+            "technical": {"columns": [], "rows": [], "limit": limit},
+        }
+
+    df = pd.read_csv(path).head(limit)
+    return {
+        "investigator": {"summary": f"Showing up to {limit} curated rows."},
+        "technical": {"columns": df.columns.tolist(), "rows": df.to_dict(orient="records"), "limit": limit},
+    }
 
 
 @router.get("/quarantine/sample")
@@ -29,9 +47,12 @@ def quarantine_sample(dataset_id: str, limit: int = 12):
 
 
 @router.get("/eda")
-def eda(dataset_id: str):
+def eda(dataset_id: str, target_column: Optional[str] = None, bins: int = 12):
+    if bins < 5 or bins > 60:
+        raise HTTPException(status_code=400, detail="bins must be between 5 and 60")
+
     try:
-        report = eda_for_dataset(dataset_id)
+        report = eda_for_dataset(dataset_id, target_column=target_column, bins=bins)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

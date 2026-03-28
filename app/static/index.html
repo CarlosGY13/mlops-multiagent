@@ -162,17 +162,64 @@
               </div>
             </div>
 
+            <div class="dual-card" data-dual="preview">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">Data preview</div>
+                <div class="dc-tab" data-view="technical">Technical</div>
+              </div>
+              <div id="preview-dual" class="dc-body">
+                <strong>Preview will appear after upload.</strong>
+              </div>
+            </div>
+
+            <div class="dual-card" data-dual="variables">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">Variables</div>
+                <div class="dc-tab" data-view="technical">Technical</div>
+              </div>
+              <div id="vars-dual" class="dc-body">
+                <strong>Variables will appear after upload.</strong>
+              </div>
+            </div>
+
             <div class="dual-card" data-dual="eda">
               <div class="dc-tabs">
                 <div class="dc-tab a" data-view="researcher">EDA overview</div>
                 <div class="dc-tab" data-view="technical">Details</div>
               </div>
-              <div id="eda-dual" class="dc-body">
-                <strong>Run EDA to see distributions and correlations.</strong>
-                <div class="chat-input-row" style="margin-top:10px">
-                  <button class="send-btn" id="btn-eda">Run EDA</button>
+              <div id="eda-dual" class="dc-body"></div>
+            </div>
+
+            <div class="dual-card" data-dual="balance">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">Outcome balance</div>
+                <div class="dc-tab" data-view="technical">Technical</div>
+              </div>
+              <div class="dc-body">
+                <div class="chat-input-row" style="align-items:center">
+                  <select id="target-select" style="flex:1;padding:9px 10px;font-size:12px;border:0.5px solid var(--color-border-secondary);border-radius:12px;background:var(--color-background-secondary);color:var(--color-text-primary);outline:none;font-family:inherit">
+                    <option value="">Select outcome column (optional)</option>
+                  </select>
+                  <button class="lit-btn" id="btn-eda-refresh">Run/Refresh</button>
                 </div>
-                <div class="mini" style="margin-top:6px">EDA runs on the curated dataset and includes missingness, distributions, and correlations.</div>
+                <div class="chat-input-row" style="margin-top:8px;gap:12px;align-items:center;flex-wrap:wrap">
+                  <label class="mini" style="display:flex;align-items:center;gap:6px;padding:0 6px">
+                    <input id="balance-percent" type="checkbox" /> show %
+                  </label>
+                </div>
+                <canvas id="balance-canvas" style="margin-top:10px;width:100%;height:180px;border-radius:12px;border:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary)"></canvas>
+                <div id="balance-caption" class="mini" style="margin-top:6px"></div>
+              </div>
+            </div>
+
+            <div class="dual-card" data-dual="missing">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">Missingness</div>
+                <div class="dc-tab" data-view="technical">Technical</div>
+              </div>
+              <div class="dc-body">
+                <canvas id="missing-canvas" style="margin-top:0;width:100%;height:180px;border-radius:12px;border:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary)"></canvas>
+                <div id="missing-caption" class="mini" style="margin-top:6px"></div>
               </div>
             </div>
 
@@ -182,12 +229,24 @@
                 <div class="dc-tab">(run EDA first)</div>
               </div>
               <div class="dc-body">
-                <div class="chat-input-row" style="align-items:center">
-                  <input id="eda-col" placeholder="Column name (numeric)" />
-                  <button class="lit-btn" id="btn-plot">Plot</button>
+                <div class="chat-input-row" style="align-items:center;flex-wrap:wrap">
+                  <select id="dist-select" style="flex:1;min-width:200px;padding:9px 10px;font-size:12px;border:0.5px solid var(--color-border-secondary);border-radius:12px;background:var(--color-background-secondary);color:var(--color-text-primary);outline:none;font-family:inherit">
+                    <option value="">Select numeric column</option>
+                  </select>
+                  <input id="dist-bins" type="number" min="5" max="60" value="12" title="Bins" style="width:92px;padding:9px 10px;font-size:12px;border:0.5px solid var(--color-border-secondary);border-radius:12px;background:var(--color-background-secondary);color:var(--color-text-primary);outline:none;font-family:inherit" />
+                  <label class="mini" style="display:flex;align-items:center;gap:6px;padding:0 6px">
+                    <input id="dist-normalize" type="checkbox" /> %
+                  </label>
+                  <label class="mini" style="display:flex;align-items:center;gap:6px;padding:0 6px">
+                    <input id="dist-logy" type="checkbox" /> log(Y)
+                  </label>
+                  <button class="lit-btn" id="btn-plot">Update</button>
                 </div>
-                <canvas id="hist-canvas" style="margin-top:10px;width:100%;height:220px;border-radius:12px;border:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary)"></canvas>
+                <div class="mini" style="margin-top:6px">Bins controls histogram resolution (re-runs EDA). Toggle % to normalize and log(Y) to reveal long tails.</div>
+                <canvas id="hist-canvas" style="margin-top:10px;width:100%;height:240px;border-radius:12px;border:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary)"></canvas>
                 <div id="hist-caption" class="mini" style="margin-top:6px"></div>
+                <canvas id="box-canvas" style="margin-top:12px;width:100%;height:120px;border-radius:12px;border:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary)"></canvas>
+                <div id="box-caption" class="mini" style="margin-top:6px"></div>
               </div>
             </div>
           </div>
@@ -295,9 +354,9 @@
           </div>
           <div class="sp-body" id="sp-body">
             <div class="sp-card">
-              <div class="sp-card-title">Related papers</div>
+              <div class="sp-card-title">Related research</div>
               <div class="sp-card-sub">Type a keyword in Agent and click “View related research” to populate this panel.</div>
-              <div class="sp-source">OpenAlex (BioPapers engine)</div>
+              <div class="sp-source">Sources: Europe PMC (papers) · OpenML (datasets)</div>
             </div>
           </div>
         </div>

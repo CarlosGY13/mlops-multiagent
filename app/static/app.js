@@ -2,6 +2,9 @@ const state = {
   view: 'researcher',
   datasetId: null,
   ingest: null,
+  eda: null,
+  curatedSample: null,
+  quarantineSample: null,
   train: null,
   drift: null,
   lastUserMessage: '',
@@ -93,7 +96,8 @@ async function api(path, { method='GET', json=null, form=null } = {}){
 }
 
 function escapeHtml(s){
-  return String(s || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+  const v = (s === null || s === undefined) ? '' : String(s);
+  return v.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 }
 
 function updateStepFlow(){
@@ -149,29 +153,69 @@ function renderSidePanelFromRag(technical){
   const papers = technical?.papers || [];
   const datasets = technical?.datasets || [];
 
-  if (papers.length === 0 && datasets.length === 0){
-    const card = document.createElement('div');
-    card.className = 'sp-card';
-    card.innerHTML = `
-      <div class="sp-card-title">No results</div>
-      <div class="sp-card-sub">No papers found for this keyword. Try another query.</div>
-      <div class="sp-source">OpenAlex (BioPapers engine)</div>
+  const mkBadge = (txt, kind='') => {
+    const cls = kind ? `sp-badge ${kind}` : 'sp-badge';
+    return `<span class="${cls}">${escapeHtml(txt)}</span>`;
+  };
+
+  const renderItem = (x) => {
+    const title = x.title || x.name || 'Related resource';
+    const url = x.url || '';
+
+    const badges = [];
+    if (x.source) badges.push(mkBadge(x.source, 'src'));
+    if (x.year) badges.push(mkBadge(x.year));
+    if (x.open_access && String(x.open_access).toLowerCase() === 'y') badges.push(mkBadge('OA', 'oa'));
+    if (x.citations) badges.push(mkBadge(`${x.citations} cites`, 'cite'));
+
+    const venue = x.venue ? `<div class="sp-card-sub">${escapeHtml(x.venue)}</div>` : '';
+    const snippet = x.snippet ? `<div class="sp-snippet">${escapeHtml(x.snippet)}</div>` : '';
+
+    const titleHtml = url
+      ? `<a class="sp-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>`
+      : `<div class="sp-card-title">${escapeHtml(title)}</div>`;
+
+    return `
+      <div class="sp-card">
+        <div class="sp-card-title">${titleHtml}</div>
+        <div class="sp-badges">${badges.join(' ')}</div>
+        ${venue}
+        ${snippet}
+        ${url ? `<div class="sp-source"><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a></div>` : ''}
+      </div>
     `;
-    sp.appendChild(card);
+  };
+
+  if (papers.length === 0 && datasets.length === 0){
+    sp.innerHTML = `
+      <div class="sp-card">
+        <div class="sp-card-title">No results</div>
+        <div class="sp-card-sub">No related papers/datasets found for this keyword. Try another query.</div>
+        <div class="sp-source">Sources: Europe PMC · OpenML</div>
+      </div>
+    `;
     return;
   }
 
-  [...papers, ...datasets].slice(0, 8).forEach((x) => {
-    const card = document.createElement('div');
-    card.className = 'sp-card';
-    const url = x.url ? `<a href="${escapeHtml(x.url)}" target="_blank" rel="noopener">${escapeHtml(x.url)}</a>` : '';
-    card.innerHTML = `
-      <div class="sp-card-title">${escapeHtml(x.title || x.name || 'Related resource')}</div>
-      <div class="sp-card-sub">Source: ${escapeHtml(x.source || '')}</div>
-      <div class="sp-source">${url}</div>
-    `;
-    sp.appendChild(card);
-  });
+  if (papers.length){
+    const h = document.createElement('div');
+    h.className = 'sp-section-title';
+    h.textContent = `Papers (${papers.length})`;
+    sp.appendChild(h);
+    const wrap = document.createElement('div');
+    wrap.innerHTML = papers.slice(0, 6).map(renderItem).join('');
+    sp.appendChild(wrap);
+  }
+
+  if (datasets.length){
+    const h = document.createElement('div');
+    h.className = 'sp-section-title';
+    h.textContent = `Datasets (${datasets.length})`;
+    sp.appendChild(h);
+    const wrap = document.createElement('div');
+    wrap.innerHTML = datasets.slice(0, 6).map(renderItem).join('');
+    sp.appendChild(wrap);
+  }
 }
 
 function researcherQualityNarrative(ingest){
@@ -288,7 +332,7 @@ function edaDefaultCard(){
     <div class="chat-input-row" style="margin-top:10px">
       <button class="send-btn" id="btn-eda">Run EDA</button>
     </div>
-    <div class="mini" style="margin-top:6px">EDA runs on the curated dataset and includes missingness, distributions, and correlations.</div>
+    <div class="mini" style="margin-top:6px">EDA runs on the curated dataset and includes missingness, distributions, correlations, and (optionally) outcome balance.</div>
   `;
 }
 
@@ -299,15 +343,77 @@ function edaSummaryNarrative(eda){
   const topMiss = Object.entries(miss).slice(0,5).map(([k,v]) => `• ${k}: ${(v*100).toFixed(1)}% missing`).join('<br>');
   const pairs = eda?.technical?.correlation?.top_pairs || [];
   const topPairs = pairs.slice(0,5).map(p => `• ${p.a} ↔ ${p.b}: corr=${(p.corr ?? 0).toFixed(3)}`).join('<br>');
+  const ta = eda?.technical?.target_analysis;
+  const taLine = ta?.task === 'classification'
+    ? `Outcome balance: imbalance ratio ≈ ${(ta.imbalance_ratio ?? 1).toFixed(2)} · ${escapeHtml(ta.recommendation || '')}`
+    : (ta?.task === 'regression' ? `Outcome: regression-like · ${escapeHtml(ta.recommendation || '')}` : 'Outcome balance: choose a column below (optional).');
 
   return `
     <strong>EDA overview</strong><br>
     Rows (curated): ${o.rows} · Columns: ${o.columns} · Duplicate rows: ${o.duplicate_rows}<br>
     <div class="mini" style="margin-top:8px"><strong>Missingness (top)</strong><br>${topMiss || '—'}</div>
     <div class="mini" style="margin-top:8px"><strong>Correlations (top)</strong><br>${topPairs || '—'}</div>
+    <div class="mini" style="margin-top:8px"><strong>Modeling note</strong><br>${taLine}</div>
     <div class="chat-input-row" style="margin-top:10px">
       <button class="lit-btn" id="btn-eda">Refresh EDA</button>
     </div>
+  `;
+}
+
+function _table(columns, rows, { maxCols=10 } = {}){
+  const cols = (columns || []).slice(0, maxCols);
+  const head = cols.map(c => `<th>${escapeHtml(c)}</th>`).join('');
+  const body = (rows || []).slice(0, 12).map(r => {
+    const tds = cols.map(c => `<td>${escapeHtml(r?.[c])}</td>`).join('');
+    return `<tr>${tds}</tr>`;
+  }).join('');
+  return `<table class="table"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${cols.length || 1}">—</td></tr>`}</tbody></table>`;
+}
+
+function previewNarrative(){
+  if (!state.datasetId) return '<strong>Preview will appear after upload.</strong>';
+  const cur = state.curatedSample?.technical;
+  const qua = state.quarantineSample?.technical;
+
+  const curTable = cur?.columns?.length ? _table(cur.columns, cur.rows) : '—';
+  const quaTable = qua?.columns?.length ? _table(qua.columns, qua.rows) : '<div class="mini">No quarantined rows to preview.</div>';
+
+  return `
+    <strong>Curated rows (ready for analysis)</strong>
+    <div style="margin-top:10px">${curTable}</div>
+    <div style="margin-top:14px"><strong>Quarantine sample (needs review)</strong></div>
+    <div style="margin-top:10px">${quaTable}</div>
+    <div class="mini" style="margin-top:10px">Tip: quarantine rows are separated with reasons — you can decide whether to fix, exclude, or adjust rules.</div>
+  `;
+}
+
+function variablesNarrative(){
+  if (!state.ingest) return '<strong>Variables will appear after upload.</strong>';
+
+  const schemaCols = state.ingest.schema_info?.columns || {};
+  const cols = Object.keys(schemaCols);
+
+  const features = state.eda?.technical?.features;
+  const ids = features?.id_like_columns || [];
+  const feats = features?.feature_columns || [];
+  const cands = features?.target_candidates || [];
+
+  const idLine = ids.length ? ids.slice(0, 12).map(c => `<span class="chip">${escapeHtml(c)}</span>`).join(' ') : '<span class="mini">None detected.</span>';
+  const featLine = feats.length ? feats.slice(0, 18).map(c => `<span class="chip">${escapeHtml(c)}</span>`).join(' ') : '<span class="mini">Run EDA to suggest features (or use Schema above).</span>';
+  const candLine = cands.length ? cands.map(x => `<button class="lit-btn" data-set-target="${escapeHtml(x.column)}" style="padding:6px 10px">${escapeHtml(x.column)} (${x.unique})</button>`).join(' ') : '<span class="mini">No obvious candidates found (low-cardinality columns).</span>';
+
+  return `
+    <strong>Columns detected:</strong> ${cols.length}<br>
+    <div class="mini" style="margin-top:6px">We try to separate ID-like columns (identifiers) from modeling features. You can override any suggestion.</div>
+
+    <div style="margin-top:10px"><strong>Potential ID columns (excluded)</strong></div>
+    <div style="margin-top:8px">${idLine}</div>
+
+    <div style="margin-top:12px"><strong>Suggested feature columns</strong></div>
+    <div style="margin-top:8px">${featLine}</div>
+
+    <div style="margin-top:12px"><strong>Suggested outcome columns (click to set)</strong></div>
+    <div class="chat-input-row" style="margin-top:8px;gap:8px;flex-wrap:wrap">${candLine}</div>
   `;
 }
 
@@ -316,6 +422,16 @@ function rerender(){
   updateBadges();
   renderMetrics();
   resultsMetrics();
+
+  // My data extra cards
+  if ($('preview-dual')){
+    $('preview-dual').innerHTML = (state.view === 'technical')
+      ? technicalBlock('Preview (technical)', { curated: state.curatedSample?.technical, quarantine: state.quarantineSample?.technical })
+      : previewNarrative();
+  }
+  if ($('vars-dual')) $('vars-dual').innerHTML = (state.view === 'technical')
+    ? technicalBlock('Variables (technical)', state.eda?.technical?.features || state.ingest?.schema_info)
+    : variablesNarrative();
 
   if (state.view === 'researcher'){
     $('exp-dual').innerHTML = state.ingest ? researcherQualityNarrative(state.ingest) : $('exp-dual').innerHTML;
@@ -362,6 +478,15 @@ function rerender(){
       : '<strong>Drift report (technical)</strong><br>—';
   }
 
+  // keep visuals in sync after view/theme changes
+  if (state.eda){
+    try {
+      plotMissingness();
+      plotBalance();
+      plotDistribution();
+    } catch (_) {}
+  }
+
   if (state.drift?.technical){
     const detected = !!state.drift.technical.drift_detected;
     $('mon-drift-dot').classList.remove('sd-ok','sd-warn','sd-run');
@@ -385,24 +510,45 @@ function setExpStatus(kind, label, val){
   $('exp-status-val').textContent = val || '';
 }
 
-async function runEDA(){
+async function runEDA({ silent=false } = {}){
   if (!state.datasetId){
-    alert('Upload a dataset first.');
+    if (!silent) alert('Upload a dataset first.');
     return;
   }
+
+  const chosenTarget = $('target-select')?.value?.trim();
+  const targetParam = chosenTarget ? `&target_column=${encodeURIComponent(chosenTarget)}` : '';
+
+  const binsRaw = $('dist-bins')?.value;
+  const bins = Number.parseInt(String(binsRaw || '12'), 10);
+  const binsParam = Number.isFinite(bins) ? `&bins=${encodeURIComponent(String(bins))}` : '';
+
   try {
-    const body = await api(`/api/part1/eda?dataset_id=${encodeURIComponent(state.datasetId)}`);
+    const body = await api(`/api/part1/eda?dataset_id=${encodeURIComponent(state.datasetId)}${targetParam}${binsParam}`);
     state.eda = body;
     rerender();
 
-    // set default plot column
+    // distributions: populate numeric selector
     const numericCols = Object.keys(body.technical?.numeric || {});
-    if (numericCols.length && !$('eda-col').value){
-      $('eda-col').value = numericCols[0];
-      plotColumn(numericCols[0]);
+    const sel = $('dist-select');
+    if (sel){
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Select numeric column</option>';
+      numericCols.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        sel.appendChild(opt);
+      });
+      if (cur && numericCols.includes(cur)) sel.value = cur;
+      else if (numericCols.length) sel.value = numericCols[0];
     }
+
+    plotMissingness();
+    plotBalance();
+    plotDistribution();
   } catch (e){
-    appendBubble('ai', `EDA error: ${escapeHtml(e.message)}`);
+    if (!silent) appendBubble('ai', `EDA error: ${escapeHtml(e.message)}`);
   }
 }
 
@@ -418,53 +564,429 @@ function _resizeCanvas(canvas){
   return { ctx, width, height };
 }
 
+function _niceTicks(maxVal, steps=4){
+  if (!(maxVal > 0)) return [0, 1];
+  const rawStep = maxVal / steps;
+  const pow = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const n = rawStep / pow;
+  const nice = (n <= 1) ? 1 : (n <= 2) ? 2 : (n <= 5) ? 5 : 10;
+  const step = nice * pow;
+  const top = Math.ceil(maxVal / step) * step;
+  const ticks = [];
+  for (let v=0; v<=top + 1e-9; v+=step) ticks.push(v);
+  return ticks;
+}
+
+function _formatTick(v){
+  if (Math.abs(v) >= 1000) return String(Math.round(v));
+  if (Math.abs(v) >= 10) return v.toFixed(1).replace(/\.0$/,'');
+  return v.toFixed(2).replace(/0$/,'').replace(/\.$/,'');
+}
+
+function plotDistribution(){
+  const col = $('dist-select')?.value?.trim();
+  if (!col) {
+    if ($('hist-caption')) $('hist-caption').textContent = 'Select a numeric column to plot.';
+    if ($('box-caption')) $('box-caption').textContent = '';
+    return;
+  }
+  plotColumn(col);
+  plotBoxplot(col);
+}
+
 function plotColumn(col){
   const tech = state.eda?.technical;
   const entry = tech?.numeric?.[col];
   const canvas = $('hist-canvas');
+  if (!canvas) return;
   const { ctx, width: w, height: h } = _resizeCanvas(canvas);
 
   const css = getComputedStyle(document.documentElement);
   const bg = css.getPropertyValue('--color-background-secondary').trim();
   const fg = css.getPropertyValue('--color-text-tertiary').trim();
+  const axis = css.getPropertyValue('--color-border-secondary').trim();
   const bar = (css.getPropertyValue('--dot-info').trim() || '#2B6CB0');
+
+  const normalize = !!$('dist-normalize')?.checked;
+  const logY = !!$('dist-logy')?.checked;
 
   ctx.clearRect(0,0,w,h);
   ctx.fillStyle = bg;
   ctx.fillRect(0,0,w,h);
 
-  if (!entry?.hist?.counts?.length){
-    $('hist-caption').textContent = `Run EDA, then choose a numeric column to plot.`;
+  if (!entry?.hist?.counts?.length || !entry?.hist?.bins?.length){
+    if ($('hist-caption')) $('hist-caption').textContent = `Run EDA, then choose a numeric column to plot.`;
     return;
   }
 
-  const counts = entry.hist.counts;
-  const maxC = Math.max(...counts, 1);
-  const pad = 18;
-  const bw = (w - pad*2) / counts.length;
+  const countsRaw = entry.hist.counts;
+  const edges = entry.hist.bins;
+  const total = countsRaw.reduce((a,b)=>a+b, 0) || 1;
+  const values = normalize ? countsRaw.map(c => (c/total)*100.0) : countsRaw.slice();
 
-  // grid lines
-  ctx.strokeStyle = 'rgba(127,127,127,0.25)';
+  const maxV = Math.max(...values, 1e-9);
+  const t = (v) => logY ? Math.log10(1 + v) : v;
+  const maxT = t(maxV);
+
+  const padL = 52;
+  const padR = 14;
+  const padT = 14;
+  const padB = 34;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+
+  // axes
+  ctx.strokeStyle = axis;
   ctx.lineWidth = 1;
-  for (let i=0;i<=4;i++){
-    const y = pad + ((h - pad*2) * i) / 4;
-    ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - pad, y);
-    ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(padL, padT);
+  ctx.lineTo(padL, padT + innerH);
+  ctx.lineTo(padL + innerW, padT + innerH);
+  ctx.stroke();
+
+  // y ticks + grid
+  ctx.fillStyle = fg;
+  ctx.font = '11px ui-sans-serif, system-ui';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+
+  if (!logY){
+    const ticks = _niceTicks(maxV, 4);
+    ticks.forEach(v => {
+      const y = padT + innerH - (t(v)/maxT)*innerH;
+      ctx.strokeStyle = 'rgba(127,127,127,0.22)';
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(padL + innerW, y);
+      ctx.stroke();
+
+      ctx.fillStyle = fg;
+      ctx.fillText(_formatTick(v), padL - 6, y);
+    });
+  } else {
+    // log ticks at 0, 1, 10, 100, ... up to max
+    const maxPow = Math.ceil(Math.log10(maxV + 1));
+    const tickVals = [0, ...Array.from({length: Math.max(1, maxPow)}, (_,i) => Math.pow(10, i))].filter(v => v <= maxV);
+    tickVals.forEach(v => {
+      const y = padT + innerH - (t(v)/maxT)*innerH;
+      ctx.strokeStyle = 'rgba(127,127,127,0.22)';
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(padL + innerW, y);
+      ctx.stroke();
+
+      ctx.fillStyle = fg;
+      ctx.fillText(_formatTick(v), padL - 6, y);
+    });
   }
 
+  // bars
+  const nBins = values.length;
+  const bw = innerW / nBins;
   ctx.fillStyle = bar;
-  counts.forEach((c, i) => {
-    const bh = Math.round(((h - pad*2) * c) / maxC);
-    const x = pad + i*bw;
-    const y = h - pad - bh;
-    ctx.fillRect(x, y, Math.max(1, bw - 3), bh);
+  values.forEach((v, i) => {
+    const bh = ((t(v))/maxT) * innerH;
+    const x = padL + i*bw;
+    const y = padT + innerH - bh;
+    ctx.fillRect(x + 1, y, Math.max(1, bw - 3), bh);
   });
+
+  // x labels (min/mid/max)
+  const xMin = edges[0];
+  const xMax = edges[edges.length - 1];
+  const xMid = edges[Math.floor(edges.length/2)];
+  ctx.fillStyle = fg;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const yLab = padT + innerH + 8;
+  ctx.fillText(_formatTick(xMin), padL, yLab);
+  ctx.fillText(_formatTick(xMid), padL + innerW/2, yLab);
+  ctx.fillText(_formatTick(xMax), padL + innerW, yLab);
+
+  // axis titles
+  ctx.fillStyle = fg;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(col, padL + innerW/2, h - 2);
+
+  ctx.save();
+  ctx.translate(12, padT + innerH/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(normalize ? '% of rows' : 'count', 0, 0);
+  ctx.restore();
 
   // caption
   const s = entry.summary || {};
-  $('hist-caption').textContent = `${col}: n=${s.count ?? 0}, missing=${s.missing ?? 0} (${((s.missing_rate ?? 0)*100).toFixed(1)}%), range=[${(s.min ?? 0).toFixed(3)}, ${(s.max ?? 0).toFixed(3)}]`;
+  const flags = `${normalize ? 'normalized' : 'count'}${logY ? ', logY' : ''}`;
+  if ($('hist-caption')) $('hist-caption').textContent = `${col} (${flags}): n=${s.count ?? 0}, missing=${s.missing ?? 0} (${((s.missing_rate ?? 0)*100).toFixed(1)}%), range=[${(s.min ?? 0).toFixed(3)}, ${(s.max ?? 0).toFixed(3)}]`;
+}
+
+function plotBoxplot(col){
+  const canvas = $('box-canvas');
+  if (!canvas) return;
+
+  const entry = state.eda?.technical?.numeric?.[col];
+  const s = entry?.summary;
+  const { ctx, width: w, height: h } = _resizeCanvas(canvas);
+
+  const css = getComputedStyle(document.documentElement);
+  const bg = css.getPropertyValue('--color-background-secondary').trim();
+  const fg = css.getPropertyValue('--color-text-tertiary').trim();
+  const axis = css.getPropertyValue('--color-border-secondary').trim();
+  const accent = (css.getPropertyValue('--dot-purple').trim() || '#6B46C1');
+
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,w,h);
+
+  if (!s || !(Number.isFinite(s.min) && Number.isFinite(s.max) && Number.isFinite(s.p25) && Number.isFinite(s.p75) && Number.isFinite(s.median))){
+    if ($('box-caption')) $('box-caption').textContent = 'Boxplot needs numeric summary (run EDA + pick a numeric column).';
+    return;
+  }
+
+  const min = s.min, q1 = s.p25, med = s.median, q3 = s.p75, max = s.max;
+  const span = (max - min) || 1;
+
+  const padL = 52;
+  const padR = 14;
+  const padT = 16;
+  const padB = 24;
+  const innerW = w - padL - padR;
+  const midY = Math.round((padT + (h - padB)) / 2);
+
+  const x = (v) => padL + ((v - min) / span) * innerW;
+
+  // axis line
+  ctx.strokeStyle = axis;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, midY);
+  ctx.lineTo(padL + innerW, midY);
+  ctx.stroke();
+
+  // whiskers
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x(min), midY);
+  ctx.lineTo(x(q1), midY);
+  ctx.moveTo(x(q3), midY);
+  ctx.lineTo(x(max), midY);
+  ctx.stroke();
+
+  // caps
+  ctx.beginPath();
+  ctx.moveTo(x(min), midY - 12);
+  ctx.lineTo(x(min), midY + 12);
+  ctx.moveTo(x(max), midY - 12);
+  ctx.lineTo(x(max), midY + 12);
+  ctx.stroke();
+
+  // box
+  const boxH = 28;
+  ctx.fillStyle = 'rgba(107,70,193,0.18)';
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
+  ctx.fillRect(x(q1), midY - boxH/2, Math.max(1, x(q3) - x(q1)), boxH);
+  ctx.strokeRect(x(q1), midY - boxH/2, Math.max(1, x(q3) - x(q1)), boxH);
+
+  // median
+  ctx.beginPath();
+  ctx.moveTo(x(med), midY - boxH/2);
+  ctx.lineTo(x(med), midY + boxH/2);
+  ctx.stroke();
+
+  // ticks (min, median, max)
+  ctx.fillStyle = fg;
+  ctx.font = '11px ui-sans-serif, system-ui';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const yLab = midY + boxH/2 + 10;
+  ctx.fillText(_formatTick(min), x(min), yLab);
+  ctx.fillText(_formatTick(med), x(med), yLab);
+  ctx.fillText(_formatTick(max), x(max), yLab);
+
+  // y-axis label (just title)
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`${col} (boxplot)`, padL + innerW/2, h - 2);
+
+  if ($('box-caption')) $('box-caption').textContent = `min=${_formatTick(min)} · Q1=${_formatTick(q1)} · median=${_formatTick(med)} · Q3=${_formatTick(q3)} · max=${_formatTick(max)}`;
+}
+
+function plotMissingness(){
+  const canvas = $('missing-canvas');
+  if (!canvas) return;
+  const miss = state.eda?.technical?.missingness || {};
+
+  const entries = Object.entries(miss).sort((a,b) => (b[1]||0) - (a[1]||0)).slice(0, 10);
+  const { ctx, width: w, height: h } = _resizeCanvas(canvas);
+
+  const css = getComputedStyle(document.documentElement);
+  const bg = css.getPropertyValue('--color-background-secondary').trim();
+  const fg = css.getPropertyValue('--color-text-tertiary').trim();
+  const bar = (css.getPropertyValue('--dot-warn').trim() || '#D97706');
+
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,w,h);
+
+  if (!entries.length){
+    if ($('missing-caption')) $('missing-caption').textContent = 'Run EDA to visualize missingness.';
+    return;
+  }
+
+  const padL = 90;
+  const padR = 12;
+  const padT = 14;
+  const padB = 18;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+  const rowH = innerH / entries.length;
+
+  // grid
+  ctx.strokeStyle = 'rgba(127,127,127,0.22)';
+  for (let i=0;i<=4;i++){
+    const x = padL + (innerW*i)/4;
+    ctx.beginPath();
+    ctx.moveTo(x, padT);
+    ctx.lineTo(x, h - padB);
+    ctx.stroke();
+  }
+
+  entries.forEach(([col, rate], i) => {
+    const y = padT + i*rowH;
+    ctx.fillStyle = fg;
+    ctx.font = '12px ui-sans-serif, system-ui';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(col).slice(0, 18), 10, y + rowH/2);
+
+    const bw = Math.max(0, Math.min(1, rate)) * innerW;
+    ctx.fillStyle = bar;
+    ctx.fillRect(padL, y + 4, bw, Math.max(6, rowH - 8));
+
+    ctx.fillStyle = fg;
+    ctx.fillText(`${(rate*100).toFixed(1)}%`, padL + bw + 6, y + rowH/2);
+  });
+
+  if ($('missing-caption')) $('missing-caption').textContent = 'Top columns by missingness (higher = more missing values).';
+}
+
+function plotBalance(){
+  const canvas = $('balance-canvas');
+  if (!canvas) return;
+  const ta = state.eda?.technical?.target_analysis;
+  const { ctx, width: w, height: h } = _resizeCanvas(canvas);
+
+  const css = getComputedStyle(document.documentElement);
+  const bg = css.getPropertyValue('--color-background-secondary').trim();
+  const fg = css.getPropertyValue('--color-text-tertiary').trim();
+  const axis = css.getPropertyValue('--color-border-secondary').trim();
+  const bar = (css.getPropertyValue('--dot-success').trim() || '#16A34A');
+
+  const asPercent = !!$('balance-percent')?.checked;
+
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,w,h);
+
+  if (!ta || ta.task !== 'classification' || !ta.counts?.length){
+    const cands = state.eda?.technical?.features?.target_candidates || [];
+    const hint = cands.length
+      ? `Suggested outcomes: ${cands.map(x => x.column).slice(0,4).join(', ')}`
+      : 'Pick an outcome column to analyze balance.';
+    if ($('balance-caption')) $('balance-caption').textContent = hint;
+    return;
+  }
+
+  const entries = ta.counts.slice(0, 10);
+  const values = asPercent ? entries.map(x => (x.ratio ?? 0) * 100.0) : entries.map(x => x.count);
+  const maxV = Math.max(...values, 1e-9);
+
+  const padL = 52;
+  const padR = 14;
+  const padT = 14;
+  const padB = 34;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+
+  // axes
+  ctx.strokeStyle = axis;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT);
+  ctx.lineTo(padL, padT + innerH);
+  ctx.lineTo(padL + innerW, padT + innerH);
+  ctx.stroke();
+
+  // y ticks + grid
+  const ticks = _niceTicks(maxV, 4);
+  ctx.font = '11px ui-sans-serif, system-ui';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ticks.forEach(v => {
+    const y = padT + innerH - (v/maxV)*innerH;
+    ctx.strokeStyle = 'rgba(127,127,127,0.22)';
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(padL + innerW, y);
+    ctx.stroke();
+    ctx.fillStyle = fg;
+    ctx.fillText(_formatTick(v) + (asPercent ? '%' : ''), padL - 6, y);
+  });
+
+  // bars
+  const bw = innerW / entries.length;
+  ctx.fillStyle = bar;
+  values.forEach((v, i) => {
+    const bh = (v/maxV) * innerH;
+    const x0 = padL + i*bw;
+    const y0 = padT + innerH - bh;
+    ctx.fillRect(x0 + 1, y0, Math.max(1, bw - 6), bh);
+
+    ctx.fillStyle = fg;
+    ctx.font = '11px ui-sans-serif, system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(String(entries[i].label).slice(0, 8), x0 + (bw/2) - 2, padT + innerH + 8);
+    ctx.fillStyle = bar;
+  });
+
+  // y-axis title
+  ctx.save();
+  ctx.fillStyle = fg;
+  ctx.translate(12, padT + innerH/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = '11px ui-sans-serif, system-ui';
+  ctx.fillText(asPercent ? '% of rows' : 'count', 0, 0);
+  ctx.restore();
+
+  if ($('balance-caption')) $('balance-caption').textContent = `${ta.target}: imbalance ratio ≈ ${(ta.imbalance_ratio ?? 1).toFixed(2)} · ${ta.recommendation || ''}`;
+}
+
+async function _refreshSamples(){
+  if (!state.datasetId) return;
+  try {
+    state.curatedSample = await api(`/api/part1/curated/sample?dataset_id=${encodeURIComponent(state.datasetId)}&limit=12`);
+  } catch (_) { state.curatedSample = null; }
+  try {
+    state.quarantineSample = await api(`/api/part1/quarantine/sample?dataset_id=${encodeURIComponent(state.datasetId)}&limit=12`);
+  } catch (_) { state.quarantineSample = null; }
+}
+
+function _fillTargetSelect(columns){
+  const sel = $('target-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select outcome column (optional)</option>';
+  (columns || []).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    sel.appendChild(opt);
+  });
 }
 
 async function ingestFile(file){
@@ -481,8 +1003,18 @@ async function ingestFile(file){
     const defaultTarget = cols.find(c => !c.toLowerCase().includes('id')) || cols[0] || '';
     $('target-col').value = defaultTarget;
 
+    _fillTargetSelect(cols);
+
+    // Keep outcome blank by default; user can pick (or click a suggested candidate).
+    if ($('target-select')) $('target-select').value = '';
+
+    await _refreshSamples();
+
     setExpStatus('sd-ok','Ingest complete', `${file.name} · dataset_id=${body.dataset_id}`);
     rerender();
+
+    // Auto-run EDA once for visibility (silent)
+    await runEDA({ silent:true });
 
     if ((body.quality?.technical?.quarantine_rows || 0) > 0){
       setTab('t-data');
@@ -678,11 +1210,24 @@ function setupEvents(){
   // EDA controls are re-rendered; use event delegation.
   document.addEventListener('click', (e) => {
     if (e.target?.id === 'btn-eda') runEDA();
-    if (e.target?.id === 'btn-plot') plotColumn($('eda-col')?.value.trim());
+    if (e.target?.id === 'btn-eda-refresh') runEDA();
+    if (e.target?.dataset?.setTarget){
+      const col = e.target.dataset.setTarget;
+      if ($('target-select')) $('target-select').value = col;
+      // keep training target synced as a convenience
+      if ($('target-col')) $('target-col').value = col;
+      runEDA({ silent:true });
+    }
+    if (e.target?.id === 'btn-plot') plotDistribution();
   });
-  document.addEventListener('keydown', (e) => {
-    if (e.target?.id === 'eda-col' && e.key === 'Enter') plotColumn($('eda-col')?.value.trim());
-  });
+  $('target-select')?.addEventListener('change', () => runEDA({ silent:true }));
+
+  $('balance-percent')?.addEventListener('change', () => plotBalance());
+
+  $('dist-select')?.addEventListener('change', () => plotDistribution());
+  $('dist-normalize')?.addEventListener('change', () => plotDistribution());
+  $('dist-logy')?.addEventListener('change', () => plotDistribution());
+  $('dist-bins')?.addEventListener('change', () => runEDA({ silent:true }));
 
   window.__openPanelAndSearch = async () => {
     openPanel();
