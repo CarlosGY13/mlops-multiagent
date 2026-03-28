@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+.venv/
+.env
+data/raw/
+data/curated/
+data/quarantine/
+data/ground_truth/
+data/mlflow_mock/
+data/rag_cache/

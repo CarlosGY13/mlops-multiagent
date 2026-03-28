@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lab Notebook AI</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <!-- TOP BAR -->
+      <div class="topbar">
+        <div class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2" />
+            <path d="M5 7h4M7 5v4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div class="app-name">Lab Notebook AI</div>
+        <div class="top-right">
+          <div class="view-toggle" role="group" aria-label="View mode">
+            <div id="vt-researcher" class="vt-btn active" tabindex="0">Researcher</div>
+            <div id="vt-technical" class="vt-btn" tabindex="0">Technical</div>
+          </div>
+          <button id="theme-toggle" class="theme-btn" type="button" aria-label="Toggle dark theme">Dark</button>
+          <div id="safety-pill" class="safety-pill">Safety ON</div>
+        </div>
+      </div>
+
+      <!-- TAB BAR -->
+      <div class="tab-bar" role="tablist" aria-label="Tabs">
+        <div class="tab active" role="tab" aria-selected="true" data-tab="t-exp">
+          <div class="tab-dot dot-info"></div>
+          Experiment
+        </div>
+        <div class="tab" role="tab" aria-selected="false" data-tab="t-data">
+          <div class="tab-dot dot-warn"></div>
+          My data
+          <div id="badge-data" class="tab-badge badge-warn hidden">0 warnings</div>
+        </div>
+        <div class="tab" role="tab" aria-selected="false" data-tab="t-agent">
+          <div class="tab-dot dot-success"></div>
+          Agent
+        </div>
+        <div class="tab" role="tab" aria-selected="false" data-tab="t-results">
+          <div class="tab-dot dot-purple"></div>
+          Results
+        </div>
+        <div class="tab" role="tab" aria-selected="false" data-tab="t-monitor">
+          <div class="tab-dot dot-danger"></div>
+          Monitor
+          <div id="badge-drift" class="tab-badge badge-danger hidden">drift</div>
+        </div>
+      </div>
+
+      <div class="layout">
+        <div class="main-area">
+          <!-- TAB 1: EXPERIMENT -->
+          <div class="tab-content active" id="t-exp" role="tabpanel">
+            <div class="section-label">Experiment flow</div>
+
+            <div class="step-flow" aria-label="Flow">
+              <div class="step-node">
+                <div id="step-1" class="step-circle sc-todo">1</div>
+                <div class="step-label">Upload data</div>
+              </div>
+              <div class="step-connector"></div>
+              <div class="step-node">
+                <div id="step-2" class="step-circle sc-todo">2</div>
+                <div class="step-label">Quality</div>
+              </div>
+              <div class="step-connector"></div>
+              <div class="step-node">
+                <div id="step-3" class="step-circle sc-todo">3</div>
+                <div class="step-label">Features</div>
+              </div>
+              <div class="step-connector"></div>
+              <div class="step-node">
+                <div id="step-4" class="step-circle sc-todo">4</div>
+                <div class="step-label">Train</div>
+              </div>
+              <div class="step-connector"></div>
+              <div class="step-node">
+                <div id="step-5" class="step-circle sc-todo">5</div>
+                <div class="step-label">Evaluate</div>
+              </div>
+              <div class="step-connector"></div>
+              <div class="step-node">
+                <div id="step-6" class="step-circle sc-todo">6</div>
+                <div class="step-label">Deploy</div>
+              </div>
+            </div>
+
+            <div class="dual-card" data-dual="quality">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">Researcher view</div>
+                <div class="dc-tab" data-view="technical">Technical view</div>
+              </div>
+              <div id="exp-dual" class="dc-body">
+                <strong>Upload a CSV to start.</strong> We will infer the schema automatically and move anomalous rows to quarantine with documented reasons.
+                <div class="annotation"><span class="ann-icon">Tip</span>You can switch Researcher/Technical at any time without losing context.</div>
+              </div>
+            </div>
+
+            <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none" />
+            <div id="upload-zone" class="upload-zone">Drag your CSV here, or click to upload</div>
+
+            <div id="exp-status" class="status-row hidden" style="margin-top:10px">
+              <div id="exp-status-dot" class="status-dot sd-run"></div>
+              <div id="exp-status-label" class="status-label">Status</div>
+              <div id="exp-status-val" class="status-val"></div>
+            </div>
+
+            <div class="note" style="margin-top:10px">
+              <div class="note-title">Responsible AI</div>
+              <div class="note-body">
+                The agent never replaces scientific judgment. It always suggests and explains (rationale), and applies Content Safety before generating responses.
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: MY DATA -->
+          <div class="tab-content" id="t-data" role="tabpanel">
+            <div class="section-label">Data quality and structure</div>
+
+            <div class="metric-row">
+              <div class="metric"><div id="m-total" class="mv">—</div><div class="ml">total rows</div></div>
+              <div class="metric"><div id="m-quarantine" class="mv" style="color:var(--color-text-warning)">—</div><div class="ml">in quarantine</div></div>
+              <div class="metric"><div id="m-valid" class="mv" style="color:var(--color-text-success)">—</div><div class="ml">valid data</div></div>
+            </div>
+
+            <div class="dual-card" data-dual="data_quality">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">Researcher view</div>
+                <div class="dc-tab" data-view="technical">Technical view</div>
+              </div>
+              <div id="data-dual" class="dc-body">
+                <strong>No dataset loaded yet.</strong> Go to Experiment and upload a CSV.
+              </div>
+            </div>
+
+            <div class="dual-card" data-dual="schema">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">Schema summary</div>
+                <div class="dc-tab" data-view="technical">Schema details</div>
+              </div>
+              <div id="schema-dual" class="dc-body">—</div>
+            </div>
+          </div>
+
+          <!-- TAB 3: AGENT -->
+          <div class="tab-content" id="t-agent" role="tabpanel">
+            <div class="chat-area" id="chat-area">
+              <div class="bubble bubble-ai">
+                Hi. Describe your protocol, variables, and what you want to optimize. I can propose multivariable variations with explicit rationale.
+                <div class="rationale-box">RAG is on-demand: enable it to enrich suggestions with related literature and datasets.</div>
+                <button class="lit-btn" id="btn-open-panel">View related research</button>
+              </div>
+            </div>
+
+            <div class="chat-input-row">
+              <input id="chat-inp" placeholder="Ask a question or describe your protocol..." />
+              <button class="send-btn" id="btn-send">Send</button>
+            </div>
+
+            <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+              <label class="mini" style="display:flex;align-items:center;gap:6px">
+                <input id="rag-active" type="checkbox" />
+                RAG on-demand (only when enabled)
+              </label>
+              <button class="lit-btn" id="btn-search">Search related papers/datasets</button>
+            </div>
+          </div>
+
+          <!-- TAB 4: RESULTS -->
+          <div class="tab-content" id="t-results" role="tabpanel">
+            <div class="section-label">Model results</div>
+            <div class="metric-row">
+              <div class="metric"><div id="r-m1" class="mv" style="color:var(--color-text-success)">—</div><div id="r-l1" class="ml">metric 1</div></div>
+              <div class="metric"><div id="r-m2" class="mv" style="color:var(--color-text-success)">—</div><div id="r-l2" class="ml">metric 2</div></div>
+              <div class="metric"><div id="r-m3" class="mv" style="color:var(--color-text-warning)">—</div><div id="r-l3" class="ml">metric 3</div></div>
+            </div>
+
+            <div class="dual-card" data-dual="results">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">Researcher view</div>
+                <div class="dc-tab" data-view="technical">Technical view</div>
+              </div>
+              <div id="results-dual" class="dc-body">
+                <strong>Train a model to see results.</strong> First upload data (Experiment), then train below.
+                <div class="note" style="margin-top:10px">
+                  <div class="note-title">Reproducibility</div>
+                  <div class="note-body">Every run is linked to a dataset hash in tracking.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="dual-card" data-dual="train_controls">
+              <div class="dc-tabs">
+                <div class="dc-tab a">Train now</div>
+                <div class="dc-tab" data-view="technical">Config</div>
+              </div>
+              <div class="dc-body">
+                <div class="chat-input-row">
+                  <input id="target-col" placeholder="target_column (e.g., outcome)" />
+                  <button class="send-btn" id="btn-train">Train</button>
+                </div>
+                <div class="mini" style="margin-top:6px">Tip: check schema in “My data” to pick a target.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 5: MONITOR -->
+          <div class="tab-content" id="t-monitor" role="tabpanel">
+            <div class="section-label">Production monitoring</div>
+
+            <div class="status-row"><div class="status-dot sd-ok"></div><div class="status-label">Endpoint</div><div class="status-val">local mock</div></div>
+            <div class="status-row"><div id="mon-drift-dot" class="status-dot sd-run"></div><div class="status-label">Drift</div><div id="mon-drift-val" class="status-val">not evaluated</div></div>
+            <div class="status-row"><div id="mon-retrain-dot" class="status-dot sd-run"></div><div class="status-label">Retraining</div><div id="mon-retrain-val" class="status-val">—</div></div>
+
+            <div class="dual-card" data-dual="monitor">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">Researcher view</div>
+                <div class="dc-tab" data-view="technical">Technical view</div>
+              </div>
+              <div id="monitor-dual" class="dc-body">
+                <strong>Monitoring is ready.</strong> Run a drift evaluation to see alerts and suggested actions.
+                <div class="mini" style="margin-top:6px">In Azure: Monitor/App Insights would trigger automated retraining.</div>
+              </div>
+            </div>
+
+            <div class="dual-card" data-dual="drift_controls">
+              <div class="dc-tabs">
+                <div class="dc-tab a">Evaluate drift</div>
+                <div class="dc-tab" data-view="technical">Payload</div>
+              </div>
+              <div class="dc-body">
+                <div class="chat-input-row">
+                  <input id="drift-ref" placeholder="reference_dataset_id" />
+                  <input id="drift-cur" placeholder="current_dataset_id" />
+                </div>
+                <div class="chat-input-row" style="margin-top:8px">
+                  <input id="drift-cols" placeholder="numeric columns (comma): col1,col2" />
+                  <button class="send-btn" id="btn-drift">Run</button>
+                </div>
+                <div class="mini" style="margin-top:6px">PSI & KS test · If drift is detected: recommend retraining.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SIDE PANEL -->
+        <div class="side-panel" id="side-panel" aria-label="Side panel">
+          <div class="sp-header">
+            <div class="sp-title">Related research</div>
+            <div class="sp-close" id="sp-close" role="button" aria-label="Close">✕</div>
+          </div>
+          <div class="sp-body" id="sp-body">
+            <div class="sp-card">
+              <div class="sp-card-title">On-demand panel</div>
+              <div class="sp-card-sub">Enable RAG or click “Search related papers/datasets” to populate this panel.</div>
+              <div class="sp-source">Europe PMC · Semantic Scholar · Kaggle · OpenML</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
