@@ -272,7 +272,7 @@ function rerender(){
     $('exp-dual').innerHTML = state.ingest ? researcherQualityNarrative(state.ingest) : $('exp-dual').innerHTML;
     $('data-dual').innerHTML = state.ingest
       ? `<strong>Your data looks usable.</strong> You can inspect quarantined rows before proceeding.\n<br><br><span class="mini">Quarantine is a safety buffer: rows are separated with reasons, not discarded.</span>`
-      : '<strong>No dataset loaded yet.</strong> Go to Experiment and upload a CSV.';
+      : '<strong>No dataset loaded yet.</strong> Upload a dataset file here or in Experiment.';
 
     $('schema-dual').innerHTML = state.ingest ? schemaNarrative(state.ingest.schema_info) : '—';
 
@@ -462,13 +462,16 @@ async function driftNow(){
   }
 }
 
-function setupUploadZone(){
-  const zone = $('upload-zone');
-  zone.addEventListener('click', () => $('csvFile').click());
+function bindUploadZone(zoneId, inputId){
+  const zone = $(zoneId);
+  const input = $(inputId);
 
-  $('csvFile').addEventListener('change', (e) => {
+  zone.addEventListener('click', () => input.click());
+
+  input.addEventListener('change', (e) => {
     const file = e.target.files?.[0];
     if (file) ingestFile(file);
+    input.value = '';
   });
 
   ;['dragenter','dragover'].forEach(evt => {
@@ -491,6 +494,11 @@ function setupUploadZone(){
     const file = e.dataTransfer?.files?.[0];
     if (file) ingestFile(file);
   });
+}
+
+function setupUploadZones(){
+  bindUploadZone('upload-zone', 'csvFile');
+  bindUploadZone('upload-zone-data', 'dataFile');
 }
 
 function setupEvents(){
@@ -535,7 +543,7 @@ async function init(){
   applyTheme(getInitialTheme());
 
   setupEvents();
-  setupUploadZone();
+  setupUploadZones();
   setView('researcher');
   setSafetyPill(false);
 

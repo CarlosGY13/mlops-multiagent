@@ -75,12 +75,35 @@ def _quality_split(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, List[D
     return curated, quarantine, reasons
 
 
-def ingest_csv(content: bytes, filename: str) -> IngestionArtifacts:
+def _read_dataframe(raw_path: Path, filename: str) -> pd.DataFrame:
+    suffix = Path(filename).suffix.lower().strip()
+
+    if suffix in (".csv",):
+        return pd.read_csv(raw_path)
+    if suffix in (".tsv",):
+        return pd.read_csv(raw_path, sep="\t")
+    if suffix in (".txt",):
+        # Best-effort delimiter inference.
+        return pd.read_csv(raw_path, sep=None, engine="python")
+    if suffix in (".jsonl", ".ndjson"):
+        return pd.read_json(raw_path, lines=True)
+    if suffix in (".json",):
+        # Records/array-of-objects is the most common for tabular data exports.
+        return pd.read_json(raw_path)
+
+    # Fallback: try CSV
+    return pd.read_csv(raw_path)
+
+
+def ingest_dataset(content: bytes, filename: str) -> IngestionArtifacts:
     dataset_id = _dataset_id_from_bytes(content)
     raw_path = BASE_DATA / "raw" / f"{dataset_id}_{filename}"
     raw_path.write_bytes(content)
 
-    df = pd.read_csv(raw_path)
+    df = _read_dataframe(raw_path, filename)
+    if df.shape[0] == 0 or df.shape[1] == 0:
+        raise ValueError("Empty dataset: no rows/columns detected")
+
     schema = _infer_schema(df)
     curated, quarantine, reasons = _quality_split(df)
 
@@ -95,6 +118,8 @@ def ingest_csv(content: bytes, filename: str) -> IngestionArtifacts:
         "curated_rows": int(curated.shape[0]),
         "quarantine_rows": int(quarantine.shape[0]),
         "quarantine_reasons": reasons,
+        "input_filename": filename,
+        "input_format": Path(filename).suffix.lower().lstrip(".") or "unknown",
     }
     save_json(BASE_DATA / "curated" / f"{dataset_id}_schema.json", schema)
     save_json(BASE_DATA / "quarantine" / f"{dataset_id}_reasons.json", quality_summary)
@@ -107,3 +132,7 @@ def ingest_csv(content: bytes, filename: str) -> IngestionArtifacts:
         schema=schema,
         quality_summary=quality_summary,
     )
+
+
+# Backwards-compatible name
+ingest_csv = ingest_dataset

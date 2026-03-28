@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, File, UploadFile
 
 from app.models import IngestResponse
-from app.services.ingestion import ingest_csv
+from app.services.ingestion import ingest_dataset
 
 router = APIRouter(prefix="/api/part1", tags=["part1-ingestion-quality"])
 
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/part1", tags=["part1-ingestion-quality"])
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest(file: UploadFile = File(...)) -> IngestResponse:
     content = await file.read()
-    artifacts = ingest_csv(content=content, filename=file.filename or "dataset.csv")
+    artifacts = ingest_dataset(content=content, filename=file.filename or "dataset.csv")
 
     quality = {
         "investigator": {

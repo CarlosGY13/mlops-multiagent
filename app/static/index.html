@@ -102,8 +102,8 @@
               </div>
             </div>
 
-            <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none" />
-            <div id="upload-zone" class="upload-zone">Drag your CSV here, or click to upload</div>
+            <input id="csvFile" type="file" accept=".csv,.tsv,.txt,.json,.jsonl,.ndjson,text/csv,application/json,text/tab-separated-values" style="display:none" />
+            <div id="upload-zone" class="upload-zone">Drag a dataset file here (.csv, .tsv, .json/.jsonl), or click to upload</div>
 
             <div id="exp-status" class="status-row hidden" style="margin-top:10px">
               <div id="exp-status-dot" class="status-dot sd-run"></div>
@@ -123,6 +123,11 @@
           <div class="tab-content" id="t-data" role="tabpanel">
             <div class="section-label">Data quality and structure</div>
 
+            <input id="dataFile" type="file" accept=".csv,.tsv,.txt,.json,.jsonl,.ndjson,text/csv,application/json,text/tab-separated-values" style="display:none" />
+            <div id="upload-zone-data" class="upload-zone" style="margin-bottom:12px">
+              Upload a dataset file here (.csv, .tsv, .json/.jsonl)
+            </div>
+
             <div class="metric-row">
               <div class="metric"><div id="m-total" class="mv">—</div><div class="ml">total rows</div></div>
               <div class="metric"><div id="m-quarantine" class="mv" style="color:var(--color-text-warning)">—</div><div class="ml">in quarantine</div></div>
@@ -135,7 +140,7 @@
                 <div class="dc-tab" data-view="technical">Technical view</div>
               </div>
               <div id="data-dual" class="dc-body">
-                <strong>No dataset loaded yet.</strong> Go to Experiment and upload a CSV.
+                <strong>No dataset loaded yet.</strong> Upload a dataset file here (or in Experiment) to run data quality and schema inference.
               </div>
             </div>
 
