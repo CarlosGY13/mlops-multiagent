@@ -5,8 +5,27 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.models import IngestResponse
 from app.services.eda import eda_for_dataset
 from app.services.ingestion import ingest_dataset
+from app.services.storage import BASE_DATA
+
+import pandas as pd
 
 router = APIRouter(prefix="/api/part1", tags=["part1-ingestion-quality"])
+
+
+@router.get("/quarantine/sample")
+def quarantine_sample(dataset_id: str, limit: int = 12):
+    path = BASE_DATA / "quarantine" / f"{dataset_id}.csv"
+    if not path.exists():
+        return {
+            "investigator": {"summary": "No quarantine file available for this dataset."},
+            "technical": {"columns": [], "rows": [], "limit": limit},
+        }
+
+    df = pd.read_csv(path).head(limit)
+    return {
+        "investigator": {"summary": f"Showing up to {limit} quarantined rows."},
+        "technical": {"columns": df.columns.tolist(), "rows": df.to_dict(orient="records"), "limit": limit},
+    }
 
 
 @router.get("/eda")

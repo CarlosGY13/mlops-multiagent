@@ -282,9 +282,19 @@ function quarantineNarrative(ingest){
   `;
 }
 
+function edaDefaultCard(){
+  return `
+    <strong>Run EDA to see distributions and correlations.</strong>
+    <div class="chat-input-row" style="margin-top:10px">
+      <button class="send-btn" id="btn-eda">Run EDA</button>
+    </div>
+    <div class="mini" style="margin-top:6px">EDA runs on the curated dataset and includes missingness, distributions, and correlations.</div>
+  `;
+}
+
 function edaSummaryNarrative(eda){
   const o = eda?.technical?.overview;
-  if (!o) return '<strong>EDA not run yet.</strong> Click “Run EDA”.';
+  if (!o) return edaDefaultCard();
   const miss = eda?.technical?.missingness || {};
   const topMiss = Object.entries(miss).slice(0,5).map(([k,v]) => `• ${k}: ${(v*100).toFixed(1)}% missing`).join('<br>');
   const pairs = eda?.technical?.correlation?.top_pairs || [];
@@ -295,6 +305,9 @@ function edaSummaryNarrative(eda){
     Rows (curated): ${o.rows} · Columns: ${o.columns} · Duplicate rows: ${o.duplicate_rows}<br>
     <div class="mini" style="margin-top:8px"><strong>Missingness (top)</strong><br>${topMiss || '—'}</div>
     <div class="mini" style="margin-top:8px"><strong>Correlations (top)</strong><br>${topPairs || '—'}</div>
+    <div class="chat-input-row" style="margin-top:10px">
+      <button class="lit-btn" id="btn-eda">Refresh EDA</button>
+    </div>
   `;
 }
 
@@ -312,7 +325,7 @@ function rerender(){
 
     $('schema-dual').innerHTML = state.ingest ? schemaNarrative(state.ingest.schema_info) : '—';
     $('quarantine-dual').innerHTML = state.ingest ? quarantineNarrative(state.ingest) : '<strong>Quarantine is empty or not available.</strong>';
-    $('eda-dual').innerHTML = state.eda ? edaSummaryNarrative(state.eda) : $('eda-dual').innerHTML;
+    $('eda-dual').innerHTML = state.eda ? edaSummaryNarrative(state.eda) : edaDefaultCard();
 
     $('results-dual').innerHTML = state.train
       ? researcherResultsNarrative(state.train)
@@ -393,37 +406,63 @@ async function runEDA(){
   }
 }
 
+function _resizeCanvas(canvas){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const width = Math.max(10, Math.floor(rect.width));
+  const height = Math.max(10, Math.floor(rect.height));
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, width, height };
+}
+
 function plotColumn(col){
   const tech = state.eda?.technical;
   const entry = tech?.numeric?.[col];
   const canvas = $('hist-canvas');
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
+  const { ctx, width: w, height: h } = _resizeCanvas(canvas);
+
+  const css = getComputedStyle(document.documentElement);
+  const bg = css.getPropertyValue('--color-background-secondary').trim();
+  const fg = css.getPropertyValue('--color-text-tertiary').trim();
+  const bar = (css.getPropertyValue('--dot-info').trim() || '#2B6CB0');
 
   ctx.clearRect(0,0,w,h);
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-background-secondary');
+  ctx.fillStyle = bg;
   ctx.fillRect(0,0,w,h);
 
   if (!entry?.hist?.counts?.length){
-    $('hist-caption').textContent = `No numeric histogram available for ${col}. Run EDA and pick a numeric column.`;
+    $('hist-caption').textContent = `Run EDA, then choose a numeric column to plot.`;
     return;
   }
 
   const counts = entry.hist.counts;
   const maxC = Math.max(...counts, 1);
-  const pad = 16;
+  const pad = 18;
   const bw = (w - pad*2) / counts.length;
 
-  const barColor = getComputedStyle(document.documentElement).getPropertyValue('--dot-info') || '#2B6CB0';
-  ctx.fillStyle = barColor.trim();
+  // grid lines
+  ctx.strokeStyle = 'rgba(127,127,127,0.25)';
+  ctx.lineWidth = 1;
+  for (let i=0;i<=4;i++){
+    const y = pad + ((h - pad*2) * i) / 4;
+    ctx.beginPath();
+    ctx.moveTo(pad, y);
+    ctx.lineTo(w - pad, y);
+    ctx.stroke();
+  }
 
+  ctx.fillStyle = bar;
   counts.forEach((c, i) => {
     const bh = Math.round(((h - pad*2) * c) / maxC);
     const x = pad + i*bw;
     const y = h - pad - bh;
-    ctx.fillRect(x, y, Math.max(1, bw - 2), bh);
+    ctx.fillRect(x, y, Math.max(1, bw - 3), bh);
   });
 
+  // caption
   const s = entry.summary || {};
   $('hist-caption').textContent = `${col}: n=${s.count ?? 0}, missing=${s.missing ?? 0} (${((s.missing_rate ?? 0)*100).toFixed(1)}%), range=[${(s.min ?? 0).toFixed(3)}, ${(s.max ?? 0).toFixed(3)}]`;
 }
@@ -636,10 +675,13 @@ function setupEvents(){
   $('btn-train').addEventListener('click', trainNow);
   $('btn-drift').addEventListener('click', driftNow);
 
-  $('btn-eda')?.addEventListener('click', runEDA);
-  $('btn-plot')?.addEventListener('click', () => plotColumn($('eda-col').value.trim()));
-  $('eda-col')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') plotColumn($('eda-col').value.trim());
+  // EDA controls are re-rendered; use event delegation.
+  document.addEventListener('click', (e) => {
+    if (e.target?.id === 'btn-eda') runEDA();
+    if (e.target?.id === 'btn-plot') plotColumn($('eda-col')?.value.trim());
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.target?.id === 'eda-col' && e.key === 'Enter') plotColumn($('eda-col')?.value.trim());
   });
 
   window.__openPanelAndSearch = async () => {
