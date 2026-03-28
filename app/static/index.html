@@ -151,6 +151,45 @@
               </div>
               <div id="schema-dual" class="dc-body">—</div>
             </div>
+
+            <div class="dual-card" data-dual="quarantine">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">Quarantine details</div>
+                <div class="dc-tab" data-view="technical">Technical</div>
+              </div>
+              <div id="quarantine-dual" class="dc-body">
+                <strong>Quarantine is empty or not available.</strong>
+              </div>
+            </div>
+
+            <div class="dual-card" data-dual="eda">
+              <div class="dc-tabs">
+                <div class="dc-tab a" data-view="researcher">EDA overview</div>
+                <div class="dc-tab" data-view="technical">Details</div>
+              </div>
+              <div id="eda-dual" class="dc-body">
+                <strong>Run EDA to see distributions and correlations.</strong>
+                <div class="chat-input-row" style="margin-top:10px">
+                  <button class="send-btn" id="btn-eda">Run EDA</button>
+                </div>
+                <div class="mini" style="margin-top:6px">EDA runs on the curated dataset and includes missingness, distributions, and correlations.</div>
+              </div>
+            </div>
+
+            <div class="dual-card" data-dual="charts">
+              <div class="dc-tabs">
+                <div class="dc-tab a">Distributions</div>
+                <div class="dc-tab" data-view="technical">Data</div>
+              </div>
+              <div class="dc-body">
+                <div class="chat-input-row" style="align-items:center">
+                  <input id="eda-col" placeholder="Column name (numeric)" />
+                  <button class="lit-btn" id="btn-plot">Plot</button>
+                </div>
+                <canvas id="hist-canvas" width="760" height="180" style="margin-top:10px;width:100%;border-radius:12px;border:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary)"></canvas>
+                <div id="hist-caption" class="mini" style="margin-top:6px"></div>
+              </div>
+            </div>
           </div>
 
           <!-- TAB 3: AGENT -->

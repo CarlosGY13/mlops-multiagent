@@ -1,11 +1,30 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.models import IngestResponse
+from app.services.eda import eda_for_dataset
 from app.services.ingestion import ingest_dataset
 
 router = APIRouter(prefix="/api/part1", tags=["part1-ingestion-quality"])
+
+
+@router.get("/eda")
+def eda(dataset_id: str):
+    try:
+        report = eda_for_dataset(dataset_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    inv = {
+        "summary": "Exploratory analysis of your curated dataset.",
+        "high_missing_columns": [k for k, v in sorted(report.get("missingness", {}).items(), key=lambda kv: kv[1], reverse=True)[:5] if v >= 0.05],
+        "top_correlations": report.get("correlation", {}).get("top_pairs", [])[:5],
+    }
+
+    return {"investigator": inv, "technical": report}
 
 
 @router.post("/ingest", response_model=IngestResponse)

@@ -55,8 +55,18 @@ def _infer_schema(df: pd.DataFrame) -> Dict[str, Any]:
 
 
 def _quality_split(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, List[Dict[str, Any]]]:
-    invalid_mask = df.isna().all(axis=1)
+    all_null_mask = df.isna().all(axis=1)
+    invalid_mask = all_null_mask.copy()
     reasons: List[Dict[str, Any]] = []
+
+    if all_null_mask.any():
+        reasons.append(
+            {
+                "column": "(row)",
+                "rule": "all_null_row",
+                "affected_rows": int(all_null_mask.sum()),
+            }
+        )
 
     for col in df.select_dtypes(include="number").columns:
         q1, q3 = df[col].quantile(0.25), df[col].quantile(0.75)
@@ -64,10 +74,18 @@ def _quality_split(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, List[D
         if iqr == 0:
             continue
         lower, upper = q1 - 3 * iqr, q3 + 3 * iqr
-        outlier_mask = (df[col] < lower) | (df[col] > upper)
-        invalid_mask = invalid_mask | outlier_mask.fillna(False)
+        outlier_mask = ((df[col] < lower) | (df[col] > upper)).fillna(False)
+        invalid_mask = invalid_mask | outlier_mask
         if outlier_mask.any():
-            reasons.append({"column": col, "rule": "iqr_3x", "lower": float(lower), "upper": float(upper)})
+            reasons.append(
+                {
+                    "column": col,
+                    "rule": "iqr_3x",
+                    "lower": float(lower),
+                    "upper": float(upper),
+                    "affected_rows": int(outlier_mask.sum()),
+                }
+            )
 
     quarantine = df[invalid_mask].copy()
     curated = df[~invalid_mask].copy()

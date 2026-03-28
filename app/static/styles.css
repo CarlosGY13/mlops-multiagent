@@ -182,8 +182,18 @@ body{font-family:var(--font-sans);color:var(--color-text-primary);background:var
 
 .rationale-box{font-size:11px;color:var(--color-text-tertiary);font-style:italic;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px;margin-top:8px}
 
-.lit-btn{font-size:11px;padding:6px 10px;border:0.5px solid var(--color-border-secondary);border-radius:10px;cursor:pointer;color:var(--color-text-secondary);background:var(--color-background-secondary);margin-top:6px}
+.lit-btn{font-size:11px;padding:6px 10px;border:0.5px solid var(--color-border-secondary);border-radius:10px;cursor:pointer;color:var(--color-text-secondary);background:var(--color-background-secondary);margin-top:6px;font-weight:800}
 .lit-btn:hover{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}
+
+.table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border-radius:12px;border:0.5px solid var(--color-border-tertiary)}
+.table th,.table td{padding:8px 10px;font-size:11px;border-bottom:0.5px solid var(--color-border-tertiary);color:var(--color-text-secondary);text-align:left}
+.table th{font-weight:900;color:var(--color-text-tertiary);background:var(--color-background-secondary)}
+.table tr:last-child td{border-bottom:none}
+
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kv .metric{padding:10px}
+.kv .ml{margin-top:0}
+
 
 .chat-input-row{display:flex;gap:8px}
 .chat-input-row input{flex:1;padding:9px 10px;font-size:12px;border:0.5px solid var(--color-border-secondary);border-radius:12px;background:var(--color-background-secondary);color:var(--color-text-primary);outline:none;font-family:inherit}

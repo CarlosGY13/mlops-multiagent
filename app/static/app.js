@@ -262,6 +262,42 @@ function researcherResultsNarrative(train){
   return `<strong>${core}</strong><br>${escapeHtml(metricsLine)}<div class="mini" style="margin-top:8px">Dataset hash: ${escapeHtml(train.dataset_hash || '')}</div>`;
 }
 
+function quarantineNarrative(ingest){
+  const q = ingest?.quality?.technical;
+  if (!q) return '<strong>Quarantine is empty or not available.</strong>';
+  const n = q.quarantine_rows || 0;
+  const reasons = q.quarantine_reasons || [];
+  if (n === 0) return '<strong>No rows in quarantine.</strong> Great — no anomalies detected by the current rules.';
+
+  const rows = reasons.map(r => `<tr><td>${escapeHtml(r.column || '—')}</td><td>${escapeHtml(r.rule || '—')}</td><td>${escapeHtml(String(r.affected_rows ?? ''))}</td><td>${escapeHtml(String(r.lower ?? ''))}</td><td>${escapeHtml(String(r.upper ?? ''))}</td></tr>`).join('');
+  return `
+    <strong>${n} rows were moved to quarantine.</strong>
+    <div class="mini" style="margin-top:6px">Rows are separated for review (not deleted). The table shows which rules triggered and how many rows they affected.</div>
+    <div style="margin-top:10px">
+      <table class="table">
+        <thead><tr><th>Column</th><th>Rule</th><th>Affected</th><th>Lower</th><th>Upper</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5">—</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function edaSummaryNarrative(eda){
+  const o = eda?.technical?.overview;
+  if (!o) return '<strong>EDA not run yet.</strong> Click “Run EDA”.';
+  const miss = eda?.technical?.missingness || {};
+  const topMiss = Object.entries(miss).slice(0,5).map(([k,v]) => `• ${k}: ${(v*100).toFixed(1)}% missing`).join('<br>');
+  const pairs = eda?.technical?.correlation?.top_pairs || [];
+  const topPairs = pairs.slice(0,5).map(p => `• ${p.a} ↔ ${p.b}: corr=${(p.corr ?? 0).toFixed(3)}`).join('<br>');
+
+  return `
+    <strong>EDA overview</strong><br>
+    Rows (curated): ${o.rows} · Columns: ${o.columns} · Duplicate rows: ${o.duplicate_rows}<br>
+    <div class="mini" style="margin-top:8px"><strong>Missingness (top)</strong><br>${topMiss || '—'}</div>
+    <div class="mini" style="margin-top:8px"><strong>Correlations (top)</strong><br>${topPairs || '—'}</div>
+  `;
+}
+
 function rerender(){
   updateStepFlow();
   updateBadges();
@@ -275,6 +311,8 @@ function rerender(){
       : '<strong>No dataset loaded yet.</strong> Upload a dataset file here or in Experiment.';
 
     $('schema-dual').innerHTML = state.ingest ? schemaNarrative(state.ingest.schema_info) : '—';
+    $('quarantine-dual').innerHTML = state.ingest ? quarantineNarrative(state.ingest) : '<strong>Quarantine is empty or not available.</strong>';
+    $('eda-dual').innerHTML = state.eda ? edaSummaryNarrative(state.eda) : $('eda-dual').innerHTML;
 
     $('results-dual').innerHTML = state.train
       ? researcherResultsNarrative(state.train)
@@ -293,6 +331,14 @@ function rerender(){
     $('schema-dual').innerHTML = state.ingest
       ? technicalBlock('Schema (technical)', state.ingest.schema_info)
       : '<strong>Schema (technical)</strong><br>—';
+
+    $('quarantine-dual').innerHTML = state.ingest
+      ? technicalBlock('Quarantine (technical)', state.ingest.quality?.technical)
+      : '<strong>Quarantine (technical)</strong><br>—';
+
+    $('eda-dual').innerHTML = state.eda
+      ? technicalBlock('EDA report (technical)', state.eda.technical)
+      : '<strong>EDA report (technical)</strong><br>—';
 
     $('results-dual').innerHTML = state.train
       ? technicalBlock('Train response (technical)', state.train)
@@ -326,6 +372,62 @@ function setExpStatus(kind, label, val){
   $('exp-status-val').textContent = val || '';
 }
 
+async function runEDA(){
+  if (!state.datasetId){
+    alert('Upload a dataset first.');
+    return;
+  }
+  try {
+    const body = await api(`/api/part1/eda?dataset_id=${encodeURIComponent(state.datasetId)}`);
+    state.eda = body;
+    rerender();
+
+    // set default plot column
+    const numericCols = Object.keys(body.technical?.numeric || {});
+    if (numericCols.length && !$('eda-col').value){
+      $('eda-col').value = numericCols[0];
+      plotColumn(numericCols[0]);
+    }
+  } catch (e){
+    appendBubble('ai', `EDA error: ${escapeHtml(e.message)}`);
+  }
+}
+
+function plotColumn(col){
+  const tech = state.eda?.technical;
+  const entry = tech?.numeric?.[col];
+  const canvas = $('hist-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-background-secondary');
+  ctx.fillRect(0,0,w,h);
+
+  if (!entry?.hist?.counts?.length){
+    $('hist-caption').textContent = `No numeric histogram available for ${col}. Run EDA and pick a numeric column.`;
+    return;
+  }
+
+  const counts = entry.hist.counts;
+  const maxC = Math.max(...counts, 1);
+  const pad = 16;
+  const bw = (w - pad*2) / counts.length;
+
+  const barColor = getComputedStyle(document.documentElement).getPropertyValue('--dot-info') || '#2B6CB0';
+  ctx.fillStyle = barColor.trim();
+
+  counts.forEach((c, i) => {
+    const bh = Math.round(((h - pad*2) * c) / maxC);
+    const x = pad + i*bw;
+    const y = h - pad - bh;
+    ctx.fillRect(x, y, Math.max(1, bw - 2), bh);
+  });
+
+  const s = entry.summary || {};
+  $('hist-caption').textContent = `${col}: n=${s.count ?? 0}, missing=${s.missing ?? 0} (${((s.missing_rate ?? 0)*100).toFixed(1)}%), range=[${(s.min ?? 0).toFixed(3)}, ${(s.max ?? 0).toFixed(3)}]`;
+}
+
 async function ingestFile(file){
   setExpStatus('sd-run','Ingesting','processing…');
   try {
@@ -334,6 +436,7 @@ async function ingestFile(file){
     const body = await api('/api/part1/ingest', { method:'POST', form });
     state.ingest = body;
     state.datasetId = body.dataset_id;
+    state.eda = null;
 
     const cols = Object.keys(body.schema_info?.columns || {});
     const defaultTarget = cols.find(c => !c.toLowerCase().includes('id')) || cols[0] || '';
@@ -532,6 +635,12 @@ function setupEvents(){
 
   $('btn-train').addEventListener('click', trainNow);
   $('btn-drift').addEventListener('click', driftNow);
+
+  $('btn-eda')?.addEventListener('click', runEDA);
+  $('btn-plot')?.addEventListener('click', () => plotColumn($('eda-col').value.trim()));
+  $('eda-col')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') plotColumn($('eda-col').value.trim());
+  });
 
   window.__openPanelAndSearch = async () => {
     openPanel();
