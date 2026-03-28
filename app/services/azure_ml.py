@@ -207,7 +207,7 @@ def submit_training_job(
         inputs=inputs,
         outputs={"out_dir": Output(type="uri_folder", mode="rw_mount")},
         environment=env,
-        compute=f"azureml:{s.azure_ml_compute_name}",
+        compute=s.azure_ml_compute_name,
         display_name=f"labnotebookai-train-{dataset_id}",
         description="Feature engineering (drop columns) + multi-model training.",
     )
