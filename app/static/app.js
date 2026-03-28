@@ -9,6 +9,7 @@ const state = {
   drift: null,
   lastUserMessage: '',
   ragCache: null,
+  sidePanelFilter: 'papers', // papers | datasets
   contentSafetyBlocked: false,
 };
 
@@ -146,6 +147,19 @@ function updateBadges(){
   }
 }
 
+function _setSidePanelTabsActive(){
+  const map = {
+    papers: $('sp-tab-papers'),
+    datasets: $('sp-tab-datasets'),
+  };
+  Object.entries(map).forEach(([k, el]) => {
+    if (!el) return;
+    const active = (k === state.sidePanelFilter);
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+}
+
 function renderSidePanelFromRag(technical){
   const sp = $('sp-body');
   sp.innerHTML = '';
@@ -153,17 +167,27 @@ function renderSidePanelFromRag(technical){
   const papers = technical?.papers || [];
   const datasets = technical?.datasets || [];
 
+  // Update tab labels with counts
+  if ($('sp-tab-papers')) $('sp-tab-papers').textContent = `Papers (${papers.length})`;
+  if ($('sp-tab-datasets')) $('sp-tab-datasets').textContent = `Datasets (${datasets.length})`;
+
+  // Default filter: show papers if available, else datasets
+  if (state.sidePanelFilter === 'papers' && papers.length === 0 && datasets.length > 0) state.sidePanelFilter = 'datasets';
+  if (state.sidePanelFilter === 'datasets' && datasets.length === 0 && papers.length > 0) state.sidePanelFilter = 'papers';
+
+  _setSidePanelTabsActive();
+
   const mkBadge = (txt, kind='') => {
     const cls = kind ? `sp-badge ${kind}` : 'sp-badge';
     return `<span class="${cls}">${escapeHtml(txt)}</span>`;
   };
 
-  const renderItem = (x) => {
+  const renderItem = (x, { showSourceBadge=true } = {}) => {
     const title = x.title || x.name || 'Related resource';
     const url = x.url || '';
 
     const badges = [];
-    if (x.source) badges.push(mkBadge(x.source, 'src'));
+    if (showSourceBadge && x.source) badges.push(mkBadge(x.source, 'src'));
     if (x.year) badges.push(mkBadge(x.year));
     if (x.open_access && String(x.open_access).toLowerCase() === 'y') badges.push(mkBadge('OA', 'oa'));
     if (x.citations) badges.push(mkBadge(`${x.citations} cites`, 'cite'));
@@ -197,25 +221,24 @@ function renderSidePanelFromRag(technical){
     return;
   }
 
-  if (papers.length){
-    const h = document.createElement('div');
-    h.className = 'sp-section-title';
-    h.textContent = `Papers (${papers.length})`;
-    sp.appendChild(h);
-    const wrap = document.createElement('div');
-    wrap.innerHTML = papers.slice(0, 6).map(renderItem).join('');
-    sp.appendChild(wrap);
-  }
+  const renderPapers = () => {
+    if (!papers.length){
+      sp.innerHTML = `<div class="sp-card"><div class="sp-card-title">No papers</div><div class="sp-card-sub">Try a more specific biomedical keyword.</div></div>`;
+      return;
+    }
+    sp.innerHTML = papers.slice(0, 10).map(x => renderItem(x, { showSourceBadge: false })).join('');
+  };
 
-  if (datasets.length){
-    const h = document.createElement('div');
-    h.className = 'sp-section-title';
-    h.textContent = `Datasets (${datasets.length})`;
-    sp.appendChild(h);
-    const wrap = document.createElement('div');
-    wrap.innerHTML = datasets.slice(0, 6).map(renderItem).join('');
-    sp.appendChild(wrap);
-  }
+  const renderDatasets = () => {
+    if (!datasets.length){
+      sp.innerHTML = `<div class="sp-card"><div class="sp-card-title">No datasets</div><div class="sp-card-sub">Try another keyword (OpenML uses dataset tags/names).</div></div>`;
+      return;
+    }
+    sp.innerHTML = datasets.slice(0, 10).map(x => renderItem(x, { showSourceBadge: true })).join('');
+  };
+
+  if (state.sidePanelFilter === 'datasets') renderDatasets();
+  else renderPapers();
 }
 
 function researcherQualityNarrative(ingest){
@@ -1082,7 +1105,7 @@ async function searchRelated(){
     openPanel();
     return;
   }
-  const body = await api('/api/part3/rag/search', { method:'POST', json: { query: q, top_k: 5 } });
+  const body = await api('/api/part3/rag/search', { method:'POST', json: { query: q, top_k: 10 } });
   state.ragCache = body.technical;
   renderSidePanelFromRag(body.technical);
 }
@@ -1192,6 +1215,19 @@ function setupEvents(){
     await searchRelated();
   });
   $('sp-close').addEventListener('click', closePanel);
+
+  // Side panel filter tabs
+  $('sp-tab-papers')?.addEventListener('click', () => {
+    state.sidePanelFilter = 'papers';
+    _setSidePanelTabsActive();
+    if (state.ragCache) renderSidePanelFromRag(state.ragCache);
+  });
+  $('sp-tab-datasets')?.addEventListener('click', () => {
+    state.sidePanelFilter = 'datasets';
+    _setSidePanelTabsActive();
+    if (state.ragCache) renderSidePanelFromRag(state.ragCache);
+  });
+
 
   const themeBtn = $('theme-toggle');
   themeBtn.addEventListener('click', toggleTheme);

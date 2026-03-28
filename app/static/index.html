@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lab Notebook AI</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=3" />
   </head>
   <body>
     <div class="shell">
@@ -349,8 +349,14 @@
         <!-- SIDE PANEL -->
         <div class="side-panel" id="side-panel" aria-label="Side panel">
           <div class="sp-header">
-            <div class="sp-title">Related research</div>
-            <div class="sp-close" id="sp-close" role="button" aria-label="Close">✕</div>
+            <div class="sp-row">
+              <div class="sp-title">Related research</div>
+              <div class="sp-close" id="sp-close" role="button" aria-label="Close">✕</div>
+            </div>
+            <div class="sp-controls" role="tablist" aria-label="Related research filters">
+              <button id="sp-tab-papers" class="sp-tab active" type="button" role="tab" aria-selected="true">Papers</button>
+              <button id="sp-tab-datasets" class="sp-tab" type="button" role="tab" aria-selected="false">Datasets</button>
+            </div>
           </div>
           <div class="sp-body" id="sp-body">
             <div class="sp-card">
@@ -363,6 +369,6 @@
       </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=3"></script>
   </body>
 </html>
