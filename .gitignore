@@ -7,3 +7,4 @@ data/curated/
 data/quarantine/
 data/ground_truth/
 data/mlflow_mock/
+data/rag_cache/
